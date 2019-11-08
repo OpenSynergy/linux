@@ -34,7 +34,6 @@
 #include <linux/types.h>
 #include <linux/virtio_types.h>
 #include <linux/virtio_ids.h>
-#include <linux/virtio_config.h>
 
 /*******************************************************************************
  * COMMON DEFINITIONS
