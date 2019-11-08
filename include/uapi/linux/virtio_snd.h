@@ -40,6 +40,8 @@
  * COMMON DEFINITIONS
  */
 
+#define VIRTIO_SND_F_MMAP_HW_PTR	0
+
 /* a configuration space */
 struct virtio_snd_config {
 	/* maximum # of available virtual queues (including the control queue)
@@ -317,6 +319,16 @@ struct virtio_snd_pcm_set_format {
 	__virtio16 rate;
 
 	__u16 padding;
+
+	/* the following is only valid with VIRTIO_SND_F_MMAP_HW_PTR feature */
+	/* start address of data buffer */
+	__virtio64 buffer_address;
+	/* size in bytes of data buffer */
+	__virtio32 buffer_bytes;
+	/* size in bytes of one audio interval/period */
+	__virtio32 period_bytes;
+	/* address of the uint32_t hardware pointer identifing the device position in the audio buffer in frames */
+	__virtio64 hw_pos_address;
 };
 
 /* a maximum possible number of channels */

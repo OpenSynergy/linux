@@ -152,7 +152,7 @@ struct viosnd_pcm_stream {
 
 	/* simulated hardware pointer */
 	struct {
-		snd_pcm_uframes_t value;
+		uint32_t value;
 		snd_pcm_uframes_t carry_value;
 		u64 begin_ns;
 	} hw_ptr;
@@ -183,6 +183,11 @@ struct viosnd_pcm {
 	struct virtqueue *queue;
 	unsigned int msg_count;
 };
+
+static inline bool viosnd_supports_mmap_hw_ptr(struct viosnd_ctx *ctx)
+{
+	return __virtio_test_bit(ctx->vdev, VIRTIO_SND_F_MMAP_HW_PTR);
+}
 
 static void viosnd_notify_cb(struct virtqueue *vqueue)
 {
@@ -579,13 +584,24 @@ static void viosnd_pcm_copy_to_shadow(struct viosnd_pcm_stream *stream,
 	}
 }
 
+static void viosnd_virtqueue_kick(struct viosnd_pcm_stream *stream)
+{
+	struct viosnd_pcm *pcm = stream->pcm;
+	unsigned long flags;
+	bool notify;
+
+	spin_lock_irqsave(&pcm->lock, flags);
+	notify = virtqueue_kick_prepare(pcm->queue);
+	spin_unlock_irqrestore(&pcm->lock, flags);
+
+	if (notify)
+		virtqueue_notify(pcm->queue);
+}
+
 static void viosnd_pcm_xfer_write(struct viosnd_pcm_stream *stream,
 				  snd_pcm_uframes_t frames, gfp_t gfp)
 {
-	struct viosnd_pcm *pcm = stream->pcm;
 	struct snd_pcm_runtime *runtime = stream->substream->runtime;
-	bool notify = false;
-	unsigned long flags;
 
 	while (frames) {
 		snd_pcm_uframes_t position =
@@ -608,23 +624,15 @@ static void viosnd_pcm_xfer_write(struct viosnd_pcm_stream *stream,
 		frames -= count;
 	}
 
-	spin_lock_irqsave(&pcm->lock, flags);
-	notify = virtqueue_kick_prepare(pcm->queue);
-	spin_unlock_irqrestore(&pcm->lock, flags);
-
-	if (notify)
-		virtqueue_notify(pcm->queue);
+	viosnd_virtqueue_kick(stream);
 }
 
 static void viosnd_pcm_xfer_read(struct viosnd_pcm_stream *stream,
 				 snd_pcm_uframes_t frames, gfp_t gfp)
 {
-	struct viosnd_pcm *pcm = stream->pcm;
 	struct snd_pcm_runtime *runtime = stream->substream->runtime;
 	snd_pcm_uframes_t position =
 		stream->hw_ptr.value % runtime->buffer_size;
-	bool notify = false;
-	unsigned long flags;
 
 	while (frames) {
 		snd_pcm_uframes_t count = frames;
@@ -642,12 +650,7 @@ static void viosnd_pcm_xfer_read(struct viosnd_pcm_stream *stream,
 		frames -= count;
 	}
 
-	spin_lock_irqsave(&pcm->lock, flags);
-	notify = virtqueue_kick_prepare(pcm->queue);
-	spin_unlock_irqrestore(&pcm->lock, flags);
-
-	if (notify)
-		virtqueue_notify(pcm->queue);
+	viosnd_virtqueue_kick(stream);
 }
 
 static int viosnd_pcm_stream_fn(void *data)
@@ -798,23 +801,30 @@ static void viosnd_pcm_notify_cb(struct virtqueue *vqueue, void *data)
 			substream = ctx->substream;
 			runtime = substream->runtime;
 
-			snd_pcm_stream_lock(substream);
-
-			if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
-				ctx->hw_ptr.value +=
-					bytes_to_frames(runtime, length);
-				if (ctx->hw_ptr.value >= runtime->boundary)
-					ctx->hw_ptr.value -= runtime->boundary;
-			}
-
-			ctx->period_position +=
-				bytes_to_frames(runtime, length);
-			if (ctx->period_position >= runtime->period_size) {
-				ctx->period_position -= runtime->period_size;
+			if (viosnd_supports_mmap_hw_ptr(pcm->ctx)) {
 				period_elapsed = true;
-			}
+				viosnd_pcm_xfer_enqueue(ctx, NULL, 0,
+							GFP_ATOMIC);
+				viosnd_virtqueue_kick(ctx);
+			} else {
+				snd_pcm_stream_lock(substream);
 
-			snd_pcm_stream_unlock(substream);
+				if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
+					ctx->hw_ptr.value +=
+						bytes_to_frames(runtime, length);
+					if (ctx->hw_ptr.value >= runtime->boundary)
+						ctx->hw_ptr.value -= runtime->boundary;
+				}
+
+				ctx->period_position +=
+					bytes_to_frames(runtime, length);
+				if (ctx->period_position >= runtime->period_size) {
+					ctx->period_position -= runtime->period_size;
+					period_elapsed = true;
+				}
+
+				snd_pcm_stream_unlock(substream);
+			}
 
 			if (period_elapsed)
 				snd_pcm_period_elapsed(substream);
@@ -829,25 +839,29 @@ static int viosnd_pcm_open(struct snd_pcm_substream *substream)
 {
 	int code;
 	struct viosnd_pcm_stream *stream = viosnd_pcm_substream_ctx(substream);
-	struct sched_param sched_params = {
-		.sched_priority = MAX_RT_PRIO - 1
-	};
 
 	if (!stream)
 		return -EBADFD;
 
 	stream->thread_idle = true;
 	stream->thread_busy = false;
+	stream->thread = NULL;
 
-	stream->thread = kthread_run(viosnd_pcm_stream_fn, stream, "vpcm%u",
-				     substream->stream);
-	if (IS_ERR(stream->thread)) {
-		code = PTR_ERR(stream->thread);
-		stream->thread = NULL;
-		return code;
+	if (!viosnd_supports_mmap_hw_ptr(stream->pcm->ctx)) {
+		struct sched_param sched_params = {
+			.sched_priority = MAX_RT_PRIO - 1
+		};
+
+		stream->thread = kthread_run(viosnd_pcm_stream_fn, stream,
+					     "vpcm%u", substream->stream);
+		if (IS_ERR(stream->thread)) {
+			code = PTR_ERR(stream->thread);
+			stream->thread = NULL;
+			return code;
+		}
+
+		sched_setscheduler(stream->thread, SCHED_FIFO, &sched_params);
 	}
-
-	sched_setscheduler(stream->thread, SCHED_FIFO, &sched_params);
 
 	substream->runtime->hw = stream->hw;
 
@@ -920,6 +934,7 @@ static int viosnd_pcm_hw_params(struct snd_pcm_substream *substream,
 	unsigned int channels;
 	unsigned int rate;
 	unsigned int buffer_size;
+	unsigned int period_bytes;
 	struct viosnd_msg *msg;
 	struct virtio_snd_pcm_set_format *request;
 	int i;
@@ -974,6 +989,21 @@ static int viosnd_pcm_hw_params(struct snd_pcm_substream *substream,
 		code = -EINVAL;
 		goto on_failure;
 	}
+
+	request->buffer_address =
+		cpu_to_virtio64(vdev, virt_to_phys(stream->data));
+	request->buffer_bytes = cpu_to_virtio32(vdev, buffer_size);
+	period_bytes = snd_pcm_hw_param_value(hw_params,
+					     SNDRV_PCM_HW_PARAM_PERIOD_BYTES,
+					     NULL);
+	if (period_bytes < 0) {
+		code = period_bytes;
+		goto on_failure;
+	}
+	request->period_bytes = period_bytes;
+	request->hw_pos_address =
+		cpu_to_virtio64(vdev, virt_to_phys(&stream->hw_ptr.value));
+
 
 	code = viosnd_ctl_msg_send(ctx, msg, 1000);
 	if (code != 0)
@@ -1089,27 +1119,38 @@ static int viosnd_pcm_trigger(struct snd_pcm_substream *substream, int command)
 	switch (command) {
 	case SNDRV_PCM_TRIGGER_START: {
 		stream->period_position = 0;
-		stream->hw_ptr.value = 0;
 		stream->hw_ptr.carry_value = 0;
 		stream->shadow.host_position = 0;
 		stream->shadow.guest_position = 0;
 
-		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-			snd_pcm_uframes_t prebuf_size =
-				viosnd_pcm_period_size(stream) * 2;
+		if (viosnd_supports_mmap_hw_ptr(stream->pcm->ctx)) {
+			for (int i=0; i<10; i++)
+				viosnd_pcm_xfer_enqueue(stream, NULL, 0,
+							GFP_ATOMIC);
+			viosnd_virtqueue_kick(stream);
+		} else {
+			stream->hw_ptr.value = 0;
 
-			viosnd_pcm_copy_to_shadow(stream, prebuf_size);
+			if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+				snd_pcm_uframes_t prebuf_size =
+					viosnd_pcm_period_size(stream) * 2;
 
-			viosnd_pcm_xfer_write(stream, prebuf_size, GFP_ATOMIC);
+				viosnd_pcm_copy_to_shadow(stream, prebuf_size);
+
+				viosnd_pcm_xfer_write(stream, prebuf_size,
+						      GFP_ATOMIC);
+			}
 		}
 
 		/* fallthru */
 	}
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE: {
 		spin_lock(&stream->thread_lock);
-		if (stream->hw_ptr.value < stream->shadow.guest_position)
-			stream->hw_ptr.value = stream->shadow.guest_position;
-		stream->hw_ptr.begin_ns = current_ns;
+		if (!viosnd_supports_mmap_hw_ptr(stream->pcm->ctx)) {
+			if (stream->hw_ptr.value < stream->shadow.guest_position)
+				stream->hw_ptr.value = stream->shadow.guest_position;
+			stream->hw_ptr.begin_ns = current_ns;
+		}
 
 		if (command == SNDRV_PCM_TRIGGER_START) {
 			request_code = VIRTIO_SND_R_PCM_START;
@@ -1138,7 +1179,8 @@ static int viosnd_pcm_trigger(struct snd_pcm_substream *substream, int command)
 		} else {
 			request_code = VIRTIO_SND_R_PCM_PAUSE;
 
-			viosnd_pcm_update_hw_ptr(stream, current_ns);
+			if (!viosnd_supports_mmap_hw_ptr(stream->pcm->ctx))
+				viosnd_pcm_update_hw_ptr(stream, current_ns);
 		}
 
 		break;
@@ -1160,9 +1202,10 @@ static snd_pcm_uframes_t viosnd_pcm_pointer(struct snd_pcm_substream *substream)
 	if (!stream)
 		return 0;
 
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
-		if (snd_pcm_running(substream))
-			viosnd_pcm_update_hw_ptr(stream, ktime_get_raw_ns());
+	if (!viosnd_supports_mmap_hw_ptr(stream->pcm->ctx) &&
+	    substream->stream == SNDRV_PCM_STREAM_PLAYBACK &&
+	    snd_pcm_running(substream))
+		viosnd_pcm_update_hw_ptr(stream, ktime_get_raw_ns());
 
 	return stream->hw_ptr.value % runtime->buffer_size;
 }
@@ -1460,7 +1503,8 @@ viosnd_pcm_stream_configure(struct viosnd_pcm *pcm,
 	if (!stream->data)
 		return ERR_PTR(-ENOMEM);
 
-	if (desc->stream_type == VIRTIO_SND_PCM_T_PLAYBACK) {
+	if (!viosnd_supports_mmap_hw_ptr(stream->pcm->ctx) &&
+	    desc->stream_type == VIRTIO_SND_PCM_T_PLAYBACK) {
 		stream->shadow.data =
 			(void *)devm_get_free_pages(dev, GFP_KERNEL,
 						    page_order);
@@ -1814,10 +1858,16 @@ static struct virtio_device_id id_table[] = {
 	{ 0 },
 };
 
+static unsigned int features[] = {
+	VIRTIO_SND_F_MMAP_HW_PTR,
+};
+
 static struct virtio_driver viosnd_driver = {
 	.driver.name = KBUILD_MODNAME,
 	.driver.owner = THIS_MODULE,
 	.id_table = id_table,
+	.feature_table = features,
+	.feature_table_size = ARRAY_SIZE(features),
 	.probe = viosnd_probe,
 	.remove = viosnd_remove,
 /* TODO: device power management */
