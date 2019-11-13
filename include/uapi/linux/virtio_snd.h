@@ -279,6 +279,18 @@ struct virtio_snd_pcm_stream_desc {
 	__virtio32 formats;
 	/* supported frame rate bit map (VIRTIO_SND_PCM_RATEBIT_*) */
 	__virtio32 rates;
+	/* min size in frames of one audio interval/period */
+	__virtio32 period_size_min;
+	/* max size in frames of one audio interval/period */
+	__virtio32 period_size_max;
+
+	/* explicitly specify supported period sizes in frames */
+	/* amount of supported period sizes. Can be 0 when no additional
+	 * limitation is required
+	 */
+	__virtio32 period_size_list_count;
+	/* supported periods size in frames */
+	__virtio32 period_size_list[32];
 };
 
 /* PCM control request header */

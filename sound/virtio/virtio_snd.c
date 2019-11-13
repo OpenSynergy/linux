@@ -140,6 +140,7 @@ struct viosnd_pcm_stream {
 	struct viosnd_pcm *pcm;
 
 	struct snd_pcm_hardware hw;
+	struct snd_pcm_hw_constraint_list period_size_list;
 	struct snd_pcm_substream *substream;
 	u8 nchmaps;
 
@@ -851,6 +852,11 @@ static int viosnd_pcm_open(struct snd_pcm_substream *substream)
 
 	substream->runtime->hw = stream->hw;
 
+	if (stream->period_size_list.count > 0)
+		snd_pcm_hw_constraint_list(substream->runtime, 0,
+					   SNDRV_PCM_HW_PARAM_PERIOD_SIZE,
+					   &stream->period_size_list);
+
 	return 0;
 }
 
@@ -1377,8 +1383,6 @@ viosnd_pcm_stream_configure(struct viosnd_pcm *pcm,
 	u32 rates;
 	u32 sample_size_min = 0;
 	u32 sample_size_max = 0;
-	unsigned int buffer_size_min;
-	unsigned int buffer_size_max;
 	unsigned int page_order;
 
 	stream = devm_kzalloc(dev, sizeof(*stream), GFP_KERNEL);
@@ -1439,22 +1443,32 @@ viosnd_pcm_stream_configure(struct viosnd_pcm *pcm,
 		return ERR_PTR(-EINVAL);
 	}
 
-	buffer_size_min =
-		(sample_size_min * desc->channels_min * stream->hw.rate_min);
-	buffer_size_min /= 2;
-	buffer_size_max =
-		(sample_size_max * desc->channels_max * stream->hw.rate_max);
-	buffer_size_max /= 2;
-
+	stream->hw.period_bytes_min =
+		(sample_size_min * desc->channels_min * desc->period_size_min);
+	stream->hw.period_bytes_max =
+		(sample_size_max * desc->channels_max * desc->period_size_max);
 	stream->hw.channels_min = desc->channels_min;
 	stream->hw.channels_max = desc->channels_max;
-	stream->hw.buffer_bytes_max = buffer_size_max;
-	stream->hw.periods_min = 4;
-	stream->hw.periods_max = 4;
-	stream->hw.period_bytes_min = buffer_size_min / 4;
-	stream->hw.period_bytes_max = buffer_size_max / 4;
+	stream->hw.periods_min = 2;
+	stream->hw.periods_max = 16;
+	stream->hw.buffer_bytes_max =
+		stream->hw.periods_max * stream->hw.period_bytes_max;
 
-	page_order = get_order(buffer_size_max);
+	if (desc->period_size_list_count > 0) {
+		const size_t size = sizeof(desc->period_size_list[0]) *
+				desc->period_size_list_count;
+		unsigned int* const elems = devm_kzalloc(dev, size, GFP_KERNEL);
+
+		if (!elems)
+			return ERR_PTR(-ENOMEM);
+		for (i = 0; i < desc->period_size_list_count; ++i)
+			elems[i] = desc->period_size_list[i];
+
+		stream->period_size_list.count = desc->period_size_list_count;
+		stream->period_size_list.list = elems;
+	}
+
+	page_order = get_order(stream->hw.buffer_bytes_max);
 
 	stream->data = (void *)devm_get_free_pages(dev, GFP_KERNEL, page_order);
 	if (!stream->data)
