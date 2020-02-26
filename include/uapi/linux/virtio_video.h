@@ -460,6 +460,7 @@ enum virtio_video_event_type {
 
 	/* For decoder only */
 	VIRTIO_VIDEO_EVENT_DECODER_RESOLUTION_CHANGED = 0x0200,
+	VIRTIO_VIDEO_EVENT_DECODE_ERROR = 0x3000,
 };
 
 struct virtio_video_event {

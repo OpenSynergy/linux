@@ -183,6 +183,7 @@ enum video_stream_state {
 	STREAM_STATE_DRAIN,
 	STREAM_STATE_STOPPED,
 	STREAM_STATE_RESET, /* specific to encoder */
+	STREAM_STATE_ERR,
 };
 
 struct virtio_video_stream {
@@ -338,6 +339,10 @@ int virtio_video_cmd_get_control(struct virtio_video *vv,
 
 void virtio_video_queue_res_chg_event(struct virtio_video_stream *stream);
 void virtio_video_queue_eos_event(struct virtio_video_stream *stream);
+void virtio_video_handle_error(struct virtio_video_stream *stream);
+int
+virtio_video_clear_queue_and_release_buffers(struct virtio_video_stream *stream,
+					     int queue_type);
 void virtio_video_cmd_ack(struct virtqueue *vq);
 void virtio_video_event_ack(struct virtqueue *vq);
 void virtio_video_dequeue_cmd_func(struct work_struct *work);

@@ -33,6 +33,9 @@ int virtio_video_queue_setup(struct vb2_queue *vq, unsigned int *num_buffers,
 	struct virtio_video_stream *stream = vb2_get_drv_priv(vq);
 	struct video_format_info *p_info;
 
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
+
 	if (*num_planes)
 		return 0;
 
@@ -397,6 +400,9 @@ int virtio_video_try_fmt(struct virtio_video_stream *stream,
 	struct video_format_frame *frm = NULL;
 	struct virtio_video_format_frame *frame = NULL;
 
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
+
 	if (V4L2_TYPE_IS_OUTPUT(f->type))
 		fmt = find_video_format(&vvd->input_fmt_list,
 					pix_mp->pixelformat);
@@ -521,6 +527,14 @@ void virtio_video_queue_res_chg_event(struct virtio_video_stream *stream)
 	v4l2_event_queue_fh(&stream->fh, &ev_src_ch);
 }
 
+void virtio_video_handle_error(struct virtio_video_stream *stream)
+{
+	virtio_video_clear_queue_and_release_buffers
+		(stream, VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
+	virtio_video_clear_queue_and_release_buffers
+		(stream, VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
+}
+
 void virtio_video_mark_drain_complete(struct virtio_video_stream *stream,
 				      struct vb2_v4l2_buffer *v4l2_vb)
 {
@@ -533,6 +547,45 @@ void virtio_video_mark_drain_complete(struct virtio_video_stream *stream,
 
 	v4l2_m2m_buf_done(v4l2_vb, VB2_BUF_STATE_DONE);
 	stream->state = STREAM_STATE_STOPPED;
+}
+
+int
+virtio_video_clear_queue_and_release_buffers(struct virtio_video_stream *stream,
+					     int queue_type)
+{
+	int ret;
+	bool *cleared;
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct virtio_video *vv = vvd->vv;
+	struct vb2_v4l2_buffer *v4l2_vb;
+
+	if (queue_type == VIRTIO_VIDEO_QUEUE_TYPE_INPUT)
+		cleared = &stream->src_cleared;
+	else
+		cleared = &stream->dst_cleared;
+
+	ret = virtio_video_cmd_queue_clear(vv, stream, queue_type);
+	if (ret) {
+		v4l2_err(&vv->v4l2_dev, "failed to clear queue\n");
+		return -1;
+	}
+
+	ret = wait_event_timeout(vv->wq, *cleared, 5 * HZ);
+	if (ret == 0) {
+		v4l2_err(&vv->v4l2_dev, "timed out waiting for queue clear\n");
+		return -1;
+	}
+
+	for (;;) {
+		if (queue_type == VIRTIO_VIDEO_QUEUE_TYPE_INPUT)
+			v4l2_vb = v4l2_m2m_src_buf_remove(stream->fh.m2m_ctx);
+		else
+			v4l2_vb = v4l2_m2m_dst_buf_remove(stream->fh.m2m_ctx);
+		if (!v4l2_vb)
+			break;
+		v4l2_m2m_buf_done(v4l2_vb, VB2_BUF_STATE_ERROR);
+	}
+	return 0;
 }
 
 void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
@@ -852,7 +905,8 @@ static int virtio_video_device_job_ready(void *priv)
 {
 	struct virtio_video_stream *stream = priv;
 
-	if (stream->state == STREAM_STATE_STOPPED)
+	if (stream->state == STREAM_STATE_STOPPED ||
+	    stream->state == STREAM_STATE_ERR)
 		return 0;
 
 	if (v4l2_m2m_num_src_bufs_ready(stream->fh.m2m_ctx) > 0 ||

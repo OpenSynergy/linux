@@ -37,6 +37,9 @@ static int virtio_video_enc_start_streaming(struct vb2_queue *vq,
 	struct virtio_video_stream *stream = vb2_get_drv_priv(vq);
 	bool input_queue = V4L2_TYPE_IS_OUTPUT(vq->type);
 
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
+
 	if (stream->state == STREAM_STATE_INIT ||
 	    (!input_queue && stream->state == STREAM_STATE_RESET) ||
 	    (input_queue && stream->state == STREAM_STATE_STOPPED))
@@ -48,44 +51,18 @@ static int virtio_video_enc_start_streaming(struct vb2_queue *vq,
 static void virtio_video_enc_stop_streaming(struct vb2_queue *vq)
 {
 	int ret, queue_type;
-	bool *cleared;
-	bool is_v4l2_output = V4L2_TYPE_IS_OUTPUT(vq->type);
 	struct virtio_video_stream *stream = vb2_get_drv_priv(vq);
-	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct virtio_video *vv = vvd->vv;
-	struct vb2_v4l2_buffer *v4l2_vb;
 
-	if (is_v4l2_output) {
-		cleared = &stream->src_cleared;
+	if (V4L2_TYPE_IS_OUTPUT(vq->type))
 		queue_type = VIRTIO_VIDEO_QUEUE_TYPE_INPUT;
-	} else {
-		cleared = &stream->dst_cleared;
+	else
 		queue_type = VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT;
-	}
 
-	ret = virtio_video_cmd_queue_clear(vv, stream, queue_type);
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to clear queue\n");
+	ret = virtio_video_clear_queue_and_release_buffers(stream, queue_type);
+	if (ret)
 		return;
-	}
 
-	ret = wait_event_timeout(vv->wq, *cleared, 5 * HZ);
-	if (ret == 0) {
-		v4l2_err(&vv->v4l2_dev, "timed out waiting for queue clear\n");
-		return;
-	}
-
-	for (;;) {
-		if (is_v4l2_output)
-			v4l2_vb = v4l2_m2m_src_buf_remove(stream->fh.m2m_ctx);
-		else
-			v4l2_vb = v4l2_m2m_dst_buf_remove(stream->fh.m2m_ctx);
-		if (!v4l2_vb)
-			break;
-		v4l2_m2m_buf_done(v4l2_vb, VB2_BUF_STATE_ERROR);
-	}
-
-	if (is_v4l2_output)
+	if (V4L2_TYPE_IS_OUTPUT(vq->type))
 		stream->state = STREAM_STATE_STOPPED;
 	else
 		stream->state = STREAM_STATE_RESET;
@@ -109,6 +86,9 @@ static int virtio_video_enc_s_ctrl(struct v4l2_ctrl *ctrl)
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
 	struct virtio_video *vv = vvd->vv;
 	uint32_t control, value;
+
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
 
 	control = virtio_video_v4l2_control_to_virtio(ctrl->id);
 
@@ -139,6 +119,9 @@ static int virtio_video_enc_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 {
 	int ret = 0;
 	struct virtio_video_stream *stream = ctrl2stream(ctrl);
+
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
 
 	switch (ctrl->id) {
 	case V4L2_CID_MIN_BUFFERS_FOR_OUTPUT:
@@ -267,6 +250,9 @@ static int virtio_video_try_encoder_cmd(struct file *file, void *fh,
 	struct virtio_video_device *vvd = video_drvdata(file);
 	struct virtio_video *vv = vvd->vv;
 
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
+
 	if (stream->state == STREAM_STATE_DRAIN)
 		return -EBUSY;
 
@@ -346,6 +332,9 @@ static int virtio_video_enc_enum_fmt_vid_cap(struct file *file, void *fh,
 	struct video_format *fmt = NULL;
 	int idx = 0;
 
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
+
 	if (f->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
 		return -EINVAL;
 
@@ -371,6 +360,9 @@ static int virtio_video_enc_enum_fmt_vid_out(struct file *file, void *fh,
 	struct video_format *fmt = NULL;
 	unsigned long output_mask = 0;
 	int idx = 0, bit_num = 0;
+
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
 
 	if (f->type != V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
 		return -EINVAL;
@@ -457,6 +449,9 @@ static int virtio_video_enc_g_parm(struct file *file, void *priv,
 	struct v4l2_outputparm *out = &a->parm.output;
 	struct v4l2_fract *timeperframe = &out->timeperframe;
 
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
+
 	if (!V4L2_TYPE_IS_OUTPUT(a->type)) {
 		v4l2_err(&vv->v4l2_dev,
 			 "getting FPS is only possible for the output queue\n");
@@ -480,6 +475,9 @@ static int virtio_video_enc_s_parm(struct file *file, void *priv,
 	struct virtio_video *vv = vvd->vv;
 	struct v4l2_outputparm *out = &a->parm.output;
 	struct v4l2_fract *timeperframe = &out->timeperframe;
+
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
 
 	if (V4L2_TYPE_IS_OUTPUT(a->type)) {
 		frame_interval = timeperframe->numerator * (u64)USEC_PER_SEC;

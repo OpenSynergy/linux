@@ -373,6 +373,10 @@ static void virtio_video_event_cb(struct virtio_video *vv,
 			wake_up(&vv->wq);
 		}
 		break;
+	case VIRTIO_VIDEO_EVENT_DECODE_ERROR:
+		stream->state = STREAM_STATE_ERR;
+		virtio_video_handle_error(stream);
+		break;
 	default:
 		v4l2_warn(&vv->v4l2_dev, "failed to queue event buffer\n");
 		break;
