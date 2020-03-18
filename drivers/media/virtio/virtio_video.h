@@ -361,6 +361,10 @@ int virtio_video_queue_setup(struct vb2_queue *vq, unsigned int *num_buffers,
 			     struct device *alloc_devs[]);
 int virtio_video_buf_init(struct vb2_buffer *vb);
 void virtio_video_buf_cleanup(struct vb2_buffer *vb);
+int virtio_video_qbuf(struct file *file, void *priv,
+		      struct v4l2_buffer *buf);
+int virtio_video_dqbuf(struct file *file, void *priv,
+		       struct v4l2_buffer *buf);
 int virtio_video_querycap(struct file *file, void *fh,
 			  struct v4l2_capability *cap);
 int virtio_video_enum_framesizes(struct file *file, void *fh,

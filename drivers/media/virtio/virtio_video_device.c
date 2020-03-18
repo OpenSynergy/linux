@@ -140,6 +140,28 @@ void virtio_video_buf_cleanup(struct vb2_buffer *vb)
 	virtio_video_resource_id_put(vv, virtio_vb->resource_id);
 }
 
+int virtio_video_qbuf(struct file *file, void *priv,
+		      struct v4l2_buffer *buf)
+{
+	struct virtio_video_stream *stream = file2stream(file);
+
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
+
+	return v4l2_m2m_ioctl_qbuf(file, priv, buf);
+}
+
+int virtio_video_dqbuf(struct file *file, void *priv,
+		       struct v4l2_buffer *buf)
+{
+	struct virtio_video_stream *stream = file2stream(file);
+
+	if (stream->state == STREAM_STATE_ERR)
+		return -EIO;
+
+	return v4l2_m2m_ioctl_dqbuf(file, priv, buf);
+}
+
 int virtio_video_querycap(struct file *file, void *fh,
 			  struct v4l2_capability *cap)
 {
