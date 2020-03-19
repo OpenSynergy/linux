@@ -373,7 +373,7 @@ static void virtio_video_event_cb(struct virtio_video *vv,
 			wake_up(&vv->wq);
 		}
 		break;
-	case VIRTIO_VIDEO_EVENT_DECODE_ERROR:
+	case VIRTIO_VIDEO_EVENT_ERROR:
 		stream->state = STREAM_STATE_ERR;
 		virtio_video_handle_error(stream);
 		break;
