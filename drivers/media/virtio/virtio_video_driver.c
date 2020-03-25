@@ -102,7 +102,7 @@ static int virtio_video_query_cap_resp_buf(struct virtio_video *vv, void
 	*resp_buf = kzalloc(vv->max_caps_len, GFP_KERNEL);
 	if (IS_ERR(*resp_buf)) {
 		ret = PTR_ERR(*resp_buf);
-		goto err;
+		goto query_cap_err;
 	}
 
 	vv->got_caps = false;
@@ -110,26 +110,25 @@ static int virtio_video_query_cap_resp_buf(struct virtio_video *vv, void
 					    queue_type);
 	if (ret) {
 		v4l2_err(&vv->v4l2_dev, "failed to query capability\n");
-		goto err;
+		goto query_cap_err;
 	}
 
 	ret = wait_event_timeout(vv->wq, vv->got_caps, 5 * HZ);
 	if (ret == 0) {
 		v4l2_err(&vv->v4l2_dev, "timed out waiting for get caps\n");
 		ret = -EIO;
-		goto err;
+		goto query_cap_err;
 	}
 
 	return 0;
-err:
+query_cap_err:
 	return ret;
 }
 
 static int virtio_video_init(struct virtio_video *vv)
 {
 	int ret = 0;
-	void *input_resp_buf = NULL;
-	void *output_resp_buf = NULL;
+	void *input_resp_buf, *output_resp_buf;
 
 	if (!vv)
 		return -EINVAL;
@@ -138,24 +137,23 @@ static int virtio_video_init(struct virtio_video *vv)
 					      VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
 	if (ret) {
 		v4l2_err(&vv->v4l2_dev, "failed to get input caps\n");
-		goto err;
+		goto init_err;
 	}
 
 	ret = virtio_video_query_cap_resp_buf(vv, &output_resp_buf,
 					      VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
 	if (ret) {
 		v4l2_err(&vv->v4l2_dev, "failed to get output caps\n");
-		goto err;
+		goto init_err;
 	}
 
 	ret = virtio_video_device_init(vv, input_resp_buf, output_resp_buf);
 	if (ret)
 		v4l2_err(&vv->v4l2_dev, "failed to initialize devices\n");
 
-err:
+init_err:
 	kfree(input_resp_buf);
 	kfree(output_resp_buf);
-
 	return ret;
 };
 

@@ -33,7 +33,7 @@ int virtio_video_queue_setup(struct vb2_queue *vq, unsigned int *num_buffers,
 	struct virtio_video_stream *stream = vb2_get_drv_priv(vq);
 	struct video_format_info *p_info;
 
-	if (stream->state == STREAM_STATE_ERR)
+	if (stream->state == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (*num_planes)
@@ -120,7 +120,6 @@ int virtio_video_buf_init(struct vb2_buffer *vb)
 	if (ret) {
 		virtio_video_resource_id_put(vvd->vv, resource_id);
 		kfree(ents);
-
 		return ret;
 	}
 
@@ -172,7 +171,7 @@ int virtio_video_qbuf(struct file *file, void *priv,
 {
 	struct virtio_video_stream *stream = file2stream(file);
 
-	if (stream->state == STREAM_STATE_ERR)
+	if (stream->state == STREAM_STATE_ERROR)
 		return -EIO;
 
 	return v4l2_m2m_ioctl_qbuf(file, priv, buf);
@@ -183,7 +182,7 @@ int virtio_video_dqbuf(struct file *file, void *priv,
 {
 	struct virtio_video_stream *stream = file2stream(file);
 
-	if (stream->state == STREAM_STATE_ERR)
+	if (stream->state == STREAM_STATE_ERROR)
 		return -EIO;
 
 	return v4l2_m2m_ioctl_dqbuf(file, priv, buf);
@@ -193,14 +192,14 @@ int virtio_video_querycap(struct file *file, void *fh,
 			  struct v4l2_capability *cap)
 {
 	struct video_device *video_dev = video_devdata(file);
+	struct virtio_video_device *vvd = video_drvdata(file);
 
-	strncpy(cap->driver, DRIVER_NAME, sizeof(cap->driver));
-	strncpy(cap->card, video_dev->name, sizeof(cap->card));
+	if (strscpy(cap->driver, DRIVER_NAME, sizeof(cap->driver)) < 0)
+		 v4l2_err(&vvd->vv->v4l2_dev, "failed to copy driver name\n");
+	if (strscpy(cap->card, video_dev->name, sizeof(cap->card)) < 0)
+		 v4l2_err(&vvd->vv->v4l2_dev, "failed to copy card name\n");
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "virtio:%s",
 		 video_dev->name);
-
-	cap->device_caps = V4L2_CAP_VIDEO_M2M_MPLANE | V4L2_CAP_STREAMING;
-	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
 
 	return 0;
 }
@@ -210,9 +209,9 @@ int virtio_video_enum_framesizes(struct file *file, void *fh,
 {
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct video_format *fmt = NULL;
-	struct video_format_frame *frm = NULL;
-	struct virtio_video_format_frame *frame = NULL;
+	struct video_format *fmt;
+	struct video_format_frame *frm;
+	struct virtio_video_format_frame *frame;
 	int idx = f->index;
 
 	fmt = find_video_format(&vvd->input_fmt_list, f->pixel_format);
@@ -265,12 +264,12 @@ int virtio_video_enum_framemintervals(struct file *file, void *fh,
 {
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct video_format *fmt = NULL;
-	struct video_format_frame *frm = NULL;
-	struct virtio_video_format_frame *frame = NULL;
-	struct virtio_video_format_range *frate = NULL;
+	struct video_format *fmt;
+	struct video_format_frame *frm;
+	struct virtio_video_format_frame *frame;
+	struct virtio_video_format_range *frate;
 	int idx = f->index;
-	int f_idx = 0;
+	int f_idx;
 
 	fmt = find_video_format(&vvd->input_fmt_list, f->pixel_format);
 	if (fmt == NULL)
@@ -311,6 +310,54 @@ int virtio_video_enum_framemintervals(struct file *file, void *fh,
 	return 0;
 }
 
+int virtio_video_stream_get_params(struct virtio_video *vv,
+				   struct virtio_video_stream *stream)
+{
+	int ret;
+
+	ret = virtio_video_cmd_get_params(vv, stream,
+					  VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
+	if (ret) {
+		v4l2_err(&vv->v4l2_dev, "failed to get stream in params\n");
+		goto err_get_parms;
+	}
+
+	ret = virtio_video_cmd_get_params(vv, stream,
+					  VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
+	if (ret)
+		v4l2_err(&vv->v4l2_dev, "failed to get stream out params\n");
+
+err_get_parms:
+	return ret;
+}
+
+int virtio_video_stream_get_controls(struct virtio_video *vv,
+				     struct virtio_video_stream *stream)
+{
+	int ret;
+
+	ret = virtio_video_cmd_get_control(vv, stream,
+					   VIRTIO_VIDEO_CONTROL_PROFILE);
+	if (ret) {
+		v4l2_err(&vv->v4l2_dev, "failed to get stream profile\n");
+		goto err_get_ctrl;
+	}
+
+	ret = virtio_video_cmd_get_control(vv, stream,
+					   VIRTIO_VIDEO_CONTROL_LEVEL);
+	if (ret) {
+		v4l2_err(&vv->v4l2_dev, "failed to get stream level\n");
+		goto err_get_ctrl;
+	}
+
+	ret = virtio_video_cmd_get_control(vv, stream,
+					   VIRTIO_VIDEO_CONTROL_BITRATE);
+	if (ret)
+		v4l2_err(&vv->v4l2_dev, "failed to get stream bitrate\n");
+
+err_get_ctrl:
+	return ret;
+}
 
 int virtio_video_g_fmt(struct file *file, void *fh, struct v4l2_format *f)
 {
@@ -364,8 +411,7 @@ int virtio_video_s_fmt(struct file *file, void *fh, struct v4l2_format *f)
 	}
 
 	virtio_video_cmd_set_params(vv, stream, &info, queue);
-	virtio_video_cmd_get_params(vv, stream, VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
-	virtio_video_cmd_get_params(vv, stream, VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
+	virtio_video_stream_get_params(vv, stream);
 
 	if (V4L2_TYPE_IS_OUTPUT(f->type))
 		p_info = &stream->in_info;
@@ -380,7 +426,7 @@ int virtio_video_s_fmt(struct file *file, void *fh, struct v4l2_format *f)
 int virtio_video_g_selection(struct file *file, void *fh,
 			 struct v4l2_selection *sel)
 {
-	struct video_format_info *info = NULL;
+	struct video_format_info *info;
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = video_drvdata(file);
 
@@ -404,6 +450,7 @@ int virtio_video_g_selection(struct file *file, void *fh,
 	case V4L2_SEL_TGT_COMPOSE:
 	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
 	case V4L2_SEL_TGT_COMPOSE_PADDED:
+	case V4L2_SEL_TGT_COMPOSE_DEFAULT:
 		sel->r.width = info->frame_width;
 		sel->r.height = info->frame_height;
 		break;
@@ -416,41 +463,18 @@ int virtio_video_g_selection(struct file *file, void *fh,
 	return 0;
 }
 
-int virtio_video_s_selection(struct file *file, void *fh,
-			     struct v4l2_selection *sel)
-{
-	struct virtio_video_stream *stream = file2stream(file);
-	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct virtio_video *vv = vvd->vv;
-	int ret;
-
-	stream->out_info.crop.top = sel->r.top;
-	stream->out_info.crop.left = sel->r.left;
-	stream->out_info.crop.width = sel->r.width;
-	stream->out_info.crop.height = sel->r.height;
-
-	ret = virtio_video_cmd_set_params(vv, stream,  &stream->out_info,
-					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
-	if (ret < 0)
-		return -EINVAL;
-
-	/* Get actual selection that was set */
-	return virtio_video_cmd_get_params(vv, stream,
-					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
-}
-
 int virtio_video_try_fmt(struct virtio_video_stream *stream,
 			 struct v4l2_format *f)
 {
 	int i, idx = 0;
 	struct v4l2_pix_format_mplane *pix_mp = &f->fmt.pix_mp;
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct video_format *fmt = NULL;
+	struct video_format *fmt;
 	bool found = false;
-	struct video_format_frame *frm = NULL;
-	struct virtio_video_format_frame *frame = NULL;
+	struct video_format_frame *frm;
+	struct virtio_video_format_frame *frame;
 
-	if (stream->state == STREAM_STATE_ERR)
+	if (stream->state == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (V4L2_TYPE_IS_OUTPUT(f->type))
@@ -479,7 +503,7 @@ int virtio_video_try_fmt(struct virtio_video_stream *stream,
 				  frame->width.max))
 			continue;
 
-		if (!within_range(frame->height.min, pix_mp->width,
+		if (!within_range(frame->height.min, pix_mp->height,
 				  frame->height.max))
 			continue;
 		idx = i;
@@ -517,17 +541,27 @@ int virtio_video_try_fmt(struct virtio_video_stream *stream,
 }
 
 static int virtio_video_queue_free(struct virtio_video *vv,
-			  struct virtio_video_stream *stream,
-			  enum v4l2_buf_type type)
+				   struct virtio_video_stream *stream,
+				   enum v4l2_buf_type type)
 {
 	int ret;
 	uint32_t queue_type = to_virtio_queue_type(type);
+	bool *destroyed = &stream->resources_destroyed;
 
 	ret = virtio_video_cmd_resource_destroy_all(vv, stream,
 						    queue_type);
-	if (ret)
+	if (ret) {
 		v4l2_warn(&vv->v4l2_dev,
 			  "failed to destroy resources\n");
+		return -1;
+	}
+
+	ret = wait_event_timeout(vv->wq, *destroyed, 5 * HZ);
+	if (ret == 0) {
+		v4l2_err(&vv->v4l2_dev,
+			 "timed out waiting for resources destroy\n");
+		return -1;
+	}
 
 	return 0;
 }
@@ -553,7 +587,7 @@ int virtio_video_subscribe_event(struct v4l2_fh *fh,
 	case V4L2_EVENT_SOURCE_CHANGE:
 		return v4l2_src_change_event_subscribe(fh, sub);
 	default:
-		return -EINVAL;
+		return v4l2_ctrl_subscribe_event(fh, sub);
 	}
 }
 
@@ -579,29 +613,14 @@ void virtio_video_queue_res_chg_event(struct virtio_video_stream *stream)
 
 void virtio_video_handle_error(struct virtio_video_stream *stream)
 {
-	virtio_video_clear_queue_and_release_buffers
+	virtio_video_queue_release_buffers
 		(stream, VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
-	virtio_video_clear_queue_and_release_buffers
+	virtio_video_queue_release_buffers
 		(stream, VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
 }
 
-void virtio_video_mark_drain_complete(struct virtio_video_stream *stream,
-				      struct vb2_v4l2_buffer *v4l2_vb)
-{
-	struct vb2_buffer *vb2_buf;
-
-	v4l2_vb->flags |= V4L2_BUF_FLAG_LAST;
-
-	vb2_buf = &v4l2_vb->vb2_buf;
-	vb2_buf->planes[0].bytesused = 0;
-
-	v4l2_m2m_buf_done(v4l2_vb, VB2_BUF_STATE_DONE);
-	stream->state = STREAM_STATE_STOPPED;
-}
-
-int
-virtio_video_clear_queue_and_release_buffers(struct virtio_video_stream *stream,
-					     int queue_type)
+int virtio_video_queue_release_buffers(struct virtio_video_stream *stream,
+				       int queue_type)
 {
 	int ret;
 	bool *cleared;
@@ -739,39 +758,15 @@ static int virtio_video_device_open(struct file *file)
 	stream->stream_id = stream_id;
 	stream->state = STREAM_STATE_IDLE;
 
-	ret = virtio_video_cmd_get_params(vv, stream,
-					  VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to get stream in params\n");
-		goto err_init_ctrls;
-	}
+	ret = virtio_video_stream_get_params(vv, stream);
+	if (ret)
+		goto err_stream_create;
 
-	ret = virtio_video_cmd_get_params(vv, stream,
-					  VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to get stream out params\n");
-		goto err_init_ctrls;
-	}
-
-	ret = virtio_video_cmd_get_control(vv, stream,
-					   VIRTIO_VIDEO_CONTROL_PROFILE);
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to get stream profile\n");
-		goto err_init_ctrls;
-	}
-
-	ret = virtio_video_cmd_get_control(vv, stream,
-					   VIRTIO_VIDEO_CONTROL_LEVEL);
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to get stream level\n");
-		goto err_init_ctrls;
-	}
-
-	ret = virtio_video_cmd_get_control(vv, stream,
-					   VIRTIO_VIDEO_CONTROL_BITRATE);
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to get stream bitrate\n");
-		goto err_init_ctrls;
+	if (format >= VIRTIO_VIDEO_FORMAT_CODED_MIN &&
+	    format <= VIRTIO_VIDEO_FORMAT_CODED_MAX) {
+		ret = virtio_video_stream_get_controls(vv, stream);
+		if (ret)
+			goto err_stream_create;
 	}
 
 	mutex_init(&stream->vq_mutex);
@@ -880,9 +875,9 @@ static const struct v4l2_m2m_ops virtio_video_device_m2m_ops = {
 
 static int virtio_video_device_register(struct virtio_video_device *vvd)
 {
-	int ret = 0;
-	struct video_device *vd = NULL;
-	struct virtio_video *vv = NULL;
+	int ret;
+	struct video_device *vd;
+	struct virtio_video *vv;
 
 	if (!vvd)
 		return -EINVAL;
@@ -932,10 +927,10 @@ static void virtio_video_device_unregister(struct virtio_video_device *vvd)
 static struct virtio_video_device *
 virtio_video_device_create(struct virtio_video *vv)
 {
-	struct device *dev = NULL;
-	struct video_device *vd = NULL;
-	struct v4l2_m2m_dev *m2m_dev = NULL;
-	struct virtio_video_device *vvd = NULL;
+	struct device *dev;
+	struct video_device *vd;
+	struct v4l2_m2m_dev *m2m_dev;
+	struct virtio_video_device *vvd;
 
 	if (!vv)
 		return ERR_PTR(-EINVAL);
@@ -967,7 +962,6 @@ virtio_video_device_create(struct virtio_video *vv)
 	/* Use the selection API instead */
 	v4l2_disable_ioctl(vd, VIDIOC_CROPCAP);
 	v4l2_disable_ioctl(vd, VIDIOC_G_CROP);
-	v4l2_disable_ioctl(vd, VIDIOC_S_CROP);
 
 	video_set_drvdata(vd, vvd);
 
@@ -992,7 +986,6 @@ virtio_video_device_create(struct virtio_video *vv)
 
 err:
 	devm_kfree(dev, vvd);
-
 	return ERR_CAST(m2m_dev);
 }
 
@@ -1008,50 +1001,48 @@ void virtio_video_device_destroy(struct virtio_video_device *vvd)
 int virtio_video_device_init(struct virtio_video *vv,
 			     void *input_buf, void *output_buf)
 {
-	int ret = 0;
-	struct virtio_video_device *vvd = NULL;
+	int ret;
+	struct virtio_video_device *vvd;
 
 	if (!vv || !input_buf || !output_buf)
 		return -EINVAL;
-
 
 	vvd = virtio_video_device_create(vv);
 	if (IS_ERR(vvd)) {
 		v4l2_err(&vv->v4l2_dev,
 			 "failed to create virtio video device\n");
 		ret = PTR_ERR(vvd);
-		goto failed;
+		goto alloc_err;
 	}
 
 	ret = virtio_video_parse_virtio_capability(vvd, input_buf, output_buf);
 	if (ret) {
 		v4l2_err(&vv->v4l2_dev, "failed to parse a function\n");
-		virtio_video_device_destroy(vvd);
-		ret = -EINVAL;
-		goto failed;
+		goto parse_cap_err;
 	}
 
 	ret = virtio_video_parse_virtio_control(vvd);
 	if (ret) {
 		v4l2_err(&vv->v4l2_dev, "failed to query controls\n");
-		virtio_video_clean_capability(vvd);
-		virtio_video_device_destroy(vvd);
-		goto failed;
+		goto parse_ctrl_err;
 	}
 
 	ret = virtio_video_device_register(vvd);
 	if (ret) {
 		v4l2_err(&vv->v4l2_dev,
 			 "failed to init virtio video device\n");
-		virtio_video_clean_control(vvd);
-		virtio_video_clean_capability(vvd);
-		virtio_video_device_destroy(vvd);
-		goto failed;
+		goto register_err;
 	}
 
 	return 0;
 
-failed:
+register_err:
+	virtio_video_clean_control(vvd);
+parse_ctrl_err:
+	virtio_video_clean_capability(vvd);
+parse_cap_err:
+	virtio_video_device_destroy(vvd);
+alloc_err:
 	virtio_video_device_deinit(vv);
 
 	return ret;
@@ -1059,7 +1050,7 @@ failed:
 
 void virtio_video_device_deinit(struct virtio_video *vv)
 {
-	struct virtio_video_device *vvd = NULL, *tmp = NULL;
+	struct virtio_video_device *vvd, *tmp;
 
 	list_for_each_entry_safe(vvd, tmp, &vv->devices_list,
 				 devices_list_entry) {

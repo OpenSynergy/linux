@@ -34,7 +34,7 @@
 #define DRIVER_NAME "virtio-video"
 
 #define MIN_BUFS_MIN 0
-#define MIN_BUFS_MAX 32
+#define MIN_BUFS_MAX VIDEO_MAX_FRAME
 #define MIN_BUFS_STEP 1
 #define MIN_BUFS_DEF 1
 
@@ -176,12 +176,12 @@ struct virtio_video_device {
 enum video_stream_state {
 	STREAM_STATE_IDLE = 0,
 	STREAM_STATE_INIT,
-	STREAM_STATE_METADATA, /* specific to decoder */
+	STREAM_STATE_DYNAMIC_RES_CHANGE, /* specific to decoder */
 	STREAM_STATE_RUNNING,
 	STREAM_STATE_DRAIN,
 	STREAM_STATE_STOPPED,
 	STREAM_STATE_RESET, /* specific to encoder */
-	STREAM_STATE_ERR,
+	STREAM_STATE_ERROR,
 };
 
 struct virtio_video_stream {
@@ -198,6 +198,7 @@ struct virtio_video_stream {
 	bool dst_cleared;
 	bool src_destroyed;
 	bool dst_destroyed;
+	bool resources_destroyed;
 	struct video_format_frame *current_frame;
 };
 
@@ -332,9 +333,8 @@ int virtio_video_cmd_get_control(struct virtio_video *vv,
 void virtio_video_queue_res_chg_event(struct virtio_video_stream *stream);
 void virtio_video_queue_eos_event(struct virtio_video_stream *stream);
 void virtio_video_handle_error(struct virtio_video_stream *stream);
-int
-virtio_video_clear_queue_and_release_buffers(struct virtio_video_stream *stream,
-					     int queue_type);
+int virtio_video_queue_release_buffers(struct virtio_video_stream *stream,
+				       int queue_type);
 void virtio_video_cmd_ack(struct virtqueue *vq);
 void virtio_video_event_ack(struct virtqueue *vq);
 void virtio_video_dequeue_cmd_func(struct work_struct *work);
@@ -345,9 +345,6 @@ int virtio_video_buf_plane_init(uint32_t idx, uint32_t resource_id,
 				struct virtio_video_device *vvd,
 				struct virtio_video_stream *stream,
 				struct vb2_buffer *vb);
-void virtio_video_mark_drain_complete(struct virtio_video_stream *stream,
-				      struct vb2_v4l2_buffer *v4l2_vb);
-
 int virtio_video_queue_setup(struct vb2_queue *vq, unsigned int *num_buffers,
 			     unsigned int *num_planes, unsigned int sizes[],
 			     struct device *alloc_devs[]);
@@ -398,7 +395,9 @@ void virtio_video_format_fill_default_info(struct video_format_info *dst_info,
 
 int virtio_video_g_selection(struct file *file, void *fh,
 			     struct v4l2_selection *sel);
-int virtio_video_s_selection(struct file *file, void *fh,
-			     struct v4l2_selection *sel);
 
+int virtio_video_stream_get_params(struct virtio_video *vv,
+				   struct virtio_video_stream *stream);
+int virtio_video_stream_get_controls(struct virtio_video *vv,
+				     struct virtio_video_stream *stream);
 #endif /* _VIRTIO_VIDEO_H */

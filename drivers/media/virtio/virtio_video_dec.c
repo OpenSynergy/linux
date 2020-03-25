@@ -27,7 +27,7 @@ static int virtio_video_dec_start_streaming(struct vb2_queue *vq,
 {
 	struct virtio_video_stream *stream = vb2_get_drv_priv(vq);
 
-	if (stream->state == STREAM_STATE_ERR)
+	if (stream->state == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (!V4L2_TYPE_IS_OUTPUT(vq->type) &&
@@ -42,13 +42,12 @@ static void virtio_video_dec_stop_streaming(struct vb2_queue *vq)
 	int queue_type;
 	struct virtio_video_stream *stream = vb2_get_drv_priv(vq);
 
-        if (V4L2_TYPE_IS_OUTPUT(vq->type))
-                queue_type = VIRTIO_VIDEO_QUEUE_TYPE_INPUT;
-        else
-                queue_type = VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT;
+	if (V4L2_TYPE_IS_OUTPUT(vq->type))
+		queue_type = VIRTIO_VIDEO_QUEUE_TYPE_INPUT;
+	else
+		queue_type = VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT;
 
-        virtio_video_clear_queue_and_release_buffers(stream, queue_type);
-
+	virtio_video_queue_release_buffers(stream, queue_type);
 	vb2_wait_for_all_buffers(vq);
 }
 
@@ -63,17 +62,17 @@ static const struct vb2_ops virtio_video_dec_qops = {
 	.wait_finish	 = vb2_ops_wait_finish,
 };
 
-static int virtio_video_dec_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
+static int virtio_video_dec_g_ctrl(struct v4l2_ctrl *ctrl)
 {
 	int ret = 0;
 	struct virtio_video_stream *stream = ctrl2stream(ctrl);
 
-	if (stream->state == STREAM_STATE_ERR)
+	if (stream->state == STREAM_STATE_ERROR)
 		return -EIO;
 
 	switch (ctrl->id) {
 	case V4L2_CID_MIN_BUFFERS_FOR_CAPTURE:
-		if (stream->state >= STREAM_STATE_METADATA)
+		if (stream->state >= STREAM_STATE_DYNAMIC_RES_CHANGE)
 			ctrl->val = stream->out_info.min_buffers;
 		else
 			ctrl->val = 0;
@@ -86,7 +85,7 @@ static int virtio_video_dec_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 }
 
 static const struct v4l2_ctrl_ops virtio_video_dec_ctrl_ops = {
-	.g_volatile_ctrl	= virtio_video_dec_g_volatile_ctrl,
+	.g_volatile_ctrl	= virtio_video_dec_g_ctrl,
 };
 
 int virtio_video_dec_init_ctrls(struct virtio_video_stream *stream)
@@ -157,7 +156,7 @@ static int virtio_video_try_decoder_cmd(struct file *file, void *fh,
 	struct virtio_video_device *vvd = video_drvdata(file);
 	struct virtio_video *vv = vvd->vv;
 
-	if (stream->state == STREAM_STATE_ERR)
+	if (stream->state == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (stream->state == STREAM_STATE_DRAIN)
@@ -235,12 +234,12 @@ static int virtio_video_dec_enum_fmt_vid_cap(struct file *file, void *fh,
 {
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct video_format_info *info = NULL;
-	struct video_format *fmt = NULL;
+	struct video_format_info *info;
+	struct video_format *fmt;
 	unsigned long input_mask = 0;
 	int idx = 0, bit_num = 0;
 
-	if (stream->state == STREAM_STATE_ERR)
+	if (stream->state == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (f->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
@@ -279,10 +278,10 @@ int virtio_video_dec_enum_fmt_vid_out(struct file *file, void *fh,
 {
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct video_format *fmt = NULL;
+	struct video_format *fmt;
 	int idx = 0;
 
-	if (stream->state == STREAM_STATE_ERR)
+	if (stream->state == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (f->type != V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
@@ -319,6 +318,37 @@ static int virtio_video_dec_s_fmt(struct file *file, void *fh,
 	return 0;
 }
 
+static int virtio_video_dec_s_selection(struct file *file, void *fh,
+					struct v4l2_selection *sel)
+{
+	struct virtio_video_stream *stream = file2stream(file);
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct virtio_video *vv = vvd->vv;
+	int ret;
+
+	if (V4L2_TYPE_IS_OUTPUT(sel->type))
+		return -EINVAL;
+
+	switch (sel->target) {
+	case V4L2_SEL_TGT_COMPOSE:
+		stream->out_info.crop.top = sel->r.top;
+		stream->out_info.crop.left = sel->r.left;
+		stream->out_info.crop.width = sel->r.width;
+		stream->out_info.crop.height = sel->r.height;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	ret = virtio_video_cmd_set_params(vv, stream,  &stream->out_info,
+					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
+	if (ret)
+		return -EINVAL;
+
+	return virtio_video_cmd_get_params(vv, stream,
+					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
+}
+
 static const struct v4l2_ioctl_ops virtio_video_dec_ioctl_ops = {
 	.vidioc_querycap	= virtio_video_querycap,
 
@@ -339,7 +369,7 @@ static const struct v4l2_ioctl_ops virtio_video_dec_ioctl_ops = {
 	.vidioc_s_fmt_vid_out_mplane	= virtio_video_dec_s_fmt,
 
 	.vidioc_g_selection = virtio_video_g_selection,
-	.vidioc_s_selection = virtio_video_s_selection,
+	.vidioc_s_selection = virtio_video_dec_s_selection,
 
 	.vidioc_try_decoder_cmd	= virtio_video_try_decoder_cmd,
 	.vidioc_decoder_cmd	= virtio_video_decoder_cmd,
