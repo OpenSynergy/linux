@@ -5,6 +5,8 @@
  * Copyright 2020-2023 OpenSynergy GmbH.
  */
 
+#include <linux/dma-buf.h>
+#include <linux/virtio_dma_buf.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-ioctl.h>
 #include <media/videobuf2-dma-sg.h>
@@ -96,7 +98,7 @@ build_virtio_video_sglist(struct virtio_video_resource_sg_list *sgl,
 	return VIRTIO_VIDEO_RESOURCE_SG_SIZE(sgt->nents);
 }
 
-int virtio_video_buf_init(struct vb2_buffer *vb)
+static int virtio_video_buf_init_guest_pages(struct vb2_buffer *vb)
 {
 	int ret = 0;
 	void *buf;
@@ -154,6 +156,121 @@ int virtio_video_buf_init(struct vb2_buffer *vb)
 	virtio_vb->resource_id = resource_id;
 
 	return 0;
+}
+
+static int virtio_video_get_dma_buf_id(struct virtio_video_device *vvd,
+			  struct vb2_buffer *vb, uuid_t *uuid)
+{
+	/**
+	 * For multiplanar formats, we assume all planes are on one DMA buffer.
+	 */
+	struct dma_buf *dma_buf = dma_buf_get(vb->planes[0].m.fd);
+
+	return virtio_dma_buf_get_uuid(dma_buf, uuid);
+}
+
+static int virtio_video_send_resource_attach_object(struct vb2_buffer *vb,
+						    uint32_t resource_id,
+						    uuid_t uuid)
+{
+	struct virtio_video_stream *stream = vb2_get_drv_priv(vb->vb2_queue);
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct virtio_video_resource_object *ent;
+	int queue_type;
+	int ret;
+
+	if (V4L2_TYPE_IS_OUTPUT(vb->vb2_queue->type))
+		queue_type = VIRTIO_VIDEO_QUEUE_TYPE_INPUT;
+	else
+		queue_type = VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT;
+
+	ent = kcalloc(1, sizeof(*ent), GFP_KERNEL);
+	uuid_copy((uuid_t *) &ent->uuid, &uuid);
+
+	ret = virtio_video_cmd_resource_attach(vvd, stream->stream_id,
+					       resource_id,
+					       to_virtio_queue_type(queue_type),
+					       ent, sizeof(*ent));
+	if (ret)
+		kfree(ent);
+
+	return ret;
+}
+
+static int virtio_video_buf_init_virtio_object(struct vb2_buffer *vb)
+{
+	struct virtio_video_stream *stream = vb2_get_drv_priv(vb->vb2_queue);
+	struct virtio_video_buffer *virtio_vb = to_virtio_vb(vb);
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	int ret;
+	uint32_t resource_id;
+	uuid_t uuid;
+
+	ret = virtio_video_get_dma_buf_id(vvd, vb, &uuid);
+	if (ret) {
+		v4l2_err(&vvd->v4l2_dev, "failed to get DMA-buf handle");
+		return ret;
+	}
+	virtio_video_resource_id_get(vvd, &resource_id);
+
+	ret = virtio_video_send_resource_attach_object(vb, resource_id, uuid);
+	if (ret) {
+		virtio_video_resource_id_put(vvd, resource_id);
+		return ret;
+	}
+
+	virtio_vb->queued = false;
+	virtio_vb->resource_id = resource_id;
+	virtio_vb->uuid = uuid;
+
+	return 0;
+}
+
+int virtio_video_buf_init(struct vb2_buffer *vb)
+{
+	struct virtio_video_stream *stream = vb2_get_drv_priv(vb->vb2_queue);
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+
+	switch (vvd->res_type) {
+	case RESOURCE_TYPE_GUEST_PAGES:
+		return virtio_video_buf_init_guest_pages(vb);
+	case RESOURCE_TYPE_VIRTIO_OBJECT:
+		return virtio_video_buf_init_virtio_object(vb);
+	default:
+		return -EINVAL;
+	}
+}
+
+int virtio_video_buf_prepare(struct vb2_buffer *vb)
+{
+	struct virtio_video_stream *stream = vb2_get_drv_priv(vb->vb2_queue);
+	struct virtio_video_buffer *virtio_vb = to_virtio_vb(vb);
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	uuid_t uuid;
+	int ret;
+
+	if (vvd->res_type != RESOURCE_TYPE_VIRTIO_OBJECT)
+		return 0;
+
+	ret = virtio_video_get_dma_buf_id(vvd, vb, &uuid);
+	if (ret) {
+		v4l2_err(&vvd->v4l2_dev, "failed to get DMA-buf handle");
+		return ret;
+	}
+
+	/**
+	 * If a user gave a different object as a buffer from the previous
+	 * one, send RESOURCE_CREATE again to register the object.
+	 */
+	if (!uuid_equal(&uuid, &virtio_vb->uuid)) {
+		ret = virtio_video_send_resource_attach_object(
+			vb, virtio_vb->resource_id, uuid);
+		if (ret)
+			return ret;
+		virtio_vb->uuid = uuid;
+	}
+
+	return ret;
 }
 
 void virtio_video_buf_cleanup(struct vb2_buffer *vb)

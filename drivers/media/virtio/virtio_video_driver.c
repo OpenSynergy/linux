@@ -45,14 +45,26 @@ static int virtio_video_probe(struct virtio_device *vdev)
 		virtio_video_event_cb
 	};
 
-	if (!virtio_has_feature(vdev, VIRTIO_VIDEO_F_RESOURCE_GUEST_PAGES)) {
-		dev_err(dev, "device must support guest allocated buffers\n");
-		return -ENODEV;
-	}
-
 	vvd = devm_kzalloc(dev, sizeof(*vvd), GFP_KERNEL);
 	if (!vvd)
 		return -ENOMEM;
+
+	/**
+	 * RESOURCE_GUEST_PAGES is prioritized when both resource type is
+	 * supported.
+	 * TODO: Can we provide users with a way of specifying a
+	 *  resource type when both are supported?
+	 */
+	if (virtio_has_feature(vdev, VIRTIO_VIDEO_F_RESOURCE_GUEST_PAGES)) {
+		vvd->res_type = RESOURCE_TYPE_GUEST_PAGES;
+	} else if (virtio_has_feature(vdev,
+				      VIRTIO_VIDEO_F_RESOURCE_VIRTIO_OBJECT)) {
+		vvd->res_type = RESOURCE_TYPE_VIRTIO_OBJECT;
+	} else {
+		dev_err(dev, "device must support guest allocated buffers or virtio objects\n");
+		ret = -ENODEV;
+		goto err_res_type;
+	}
 
 	switch (vdev->id.device) {
 	case VIRTIO_ID_VIDEO_ENCODER:
@@ -174,6 +186,7 @@ err_vbufs:
 err_vqs:
 	v4l2_device_unregister(&vvd->v4l2_dev);
 err_v4l2_reg:
+err_res_type:
 	devm_kfree(&vdev->dev, vvd);
 
 	return ret;
@@ -199,6 +212,7 @@ static struct virtio_device_id id_table[] = {
 static unsigned int features[] = {
 	VIRTIO_VIDEO_F_RESOURCE_GUEST_PAGES,
 	VIRTIO_VIDEO_F_RESOURCE_NON_CONTIG,
+	VIRTIO_VIDEO_F_RESOURCE_VIRTIO_OBJECT,
 };
 
 static struct virtio_driver virtio_video_driver = {

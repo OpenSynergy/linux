@@ -17,6 +17,7 @@
 #include <media/v4l2-device.h>
 #include <media/v4l2-mem2mem.h>
 #include <media/v4l2-ctrls.h>
+#include <media/videobuf2-core.h>
 #include <media/videobuf2-dma-sg.h>
 #include <media/videobuf2-dma-contig.h>
 
@@ -144,11 +145,18 @@ struct virtio_video_stream {
 	struct video_format_frame *current_frame;
 };
 
+enum virtio_video_resource_type {
+	RESOURCE_TYPE_GUEST_PAGES = 0,
+	RESOURCE_TYPE_VIRTIO_OBJECT,
+};
+
 struct virtio_video_device {
 	struct virtio_device *vdev;
 	struct virtio_video_cmd_queue commandq;
 	struct virtio_video_event_queue eventq;
 	wait_queue_head_t wq;
+
+	enum virtio_video_resource_type res_type;
 
 	struct kmem_cache *vbufs;
 	struct virtio_video_event *evts;
@@ -203,6 +211,9 @@ struct virtio_video_buffer {
 	struct v4l2_m2m_buffer v4l2_m2m_vb;
 	uint32_t resource_id;
 	bool queued;
+
+	/* Only for virtio object buffer */
+	uuid_t uuid;
 };
 
 static inline gfp_t
@@ -361,6 +372,7 @@ int virtio_video_buf_plane_init(uint32_t idx, uint32_t resource_id,
 int virtio_video_queue_setup(struct vb2_queue *vq, unsigned int *num_buffers,
 			     unsigned int *num_planes, unsigned int sizes[],
 			     struct device *alloc_devs[]);
+int virtio_video_buf_prepare(struct vb2_buffer *vb);
 int virtio_video_buf_init(struct vb2_buffer *vb);
 void virtio_video_buf_cleanup(struct vb2_buffer *vb);
 void virtio_video_buf_queue(struct vb2_buffer *vb);

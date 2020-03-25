@@ -423,6 +423,18 @@ int virtio_video_cmd_stream_create(struct virtio_video_device *vvd,
 {
 	struct virtio_video_stream_create *req_p;
 	struct virtio_video_vbuffer *vbuf;
+	int resource_type;
+
+	switch (vvd->res_type) {
+	case RESOURCE_TYPE_GUEST_PAGES:
+		resource_type = VIRTIO_VIDEO_MEM_TYPE_GUEST_PAGES;
+		break;
+	case RESOURCE_TYPE_VIRTIO_OBJECT:
+		resource_type = VIRTIO_VIDEO_MEM_TYPE_VIRTIO_OBJECT;
+		break;
+	default:
+		return -EINVAL;
+	}
 
 	req_p = virtio_video_alloc_req(vvd, &vbuf, sizeof(*req_p));
 	if (IS_ERR(req_p))
@@ -430,9 +442,10 @@ int virtio_video_cmd_stream_create(struct virtio_video_device *vvd,
 
 	req_p->hdr.type = cpu_to_le32(VIRTIO_VIDEO_CMD_STREAM_CREATE);
 	req_p->hdr.stream_id = cpu_to_le32(stream_id);
-	req_p->in_mem_type = cpu_to_le32(VIRTIO_VIDEO_MEM_TYPE_GUEST_PAGES);
-	req_p->out_mem_type = cpu_to_le32(VIRTIO_VIDEO_MEM_TYPE_GUEST_PAGES);
 	req_p->coded_format = cpu_to_le32(format);
+	req_p->in_mem_type = cpu_to_le32(resource_type);
+	req_p->out_mem_type = cpu_to_le32(resource_type);
+
 	if (strscpy(req_p->tag, tag, sizeof(req_p->tag) - 1) < 0)
 		v4l2_err(&vvd->v4l2_dev, "failed to copy stream tag\n");
 	req_p->tag[sizeof(req_p->tag) - 1] = 0;
@@ -965,4 +978,3 @@ int virtio_video_cmd_set_control(struct virtio_video_device *vvd,
 
 	return virtio_video_queue_cmd_buffer(vvd, vbuf);
 }
-

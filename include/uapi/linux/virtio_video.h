@@ -22,6 +22,8 @@
  * scatter-gather lists.
  */
 #define VIRTIO_VIDEO_F_RESOURCE_NON_CONTIG 1
+/* Objects exported by another virtio device can be used for video buffers */
+#define VIRTIO_VIDEO_F_RESOURCE_VIRTIO_OBJECT 2
 
 #define VIRTIO_VIDEO_MAX_PLANES 8
 
@@ -217,6 +219,7 @@ struct virtio_video_query_capability_resp {
 /* VIRTIO_VIDEO_CMD_STREAM_CREATE */
 enum virtio_video_mem_type {
 	VIRTIO_VIDEO_MEM_TYPE_GUEST_PAGES,
+	VIRTIO_VIDEO_MEM_TYPE_VIRTIO_OBJECT,
 };
 
 struct virtio_video_stream_create {
