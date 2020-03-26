@@ -22,15 +22,6 @@
 
 #include "virtio_video.h"
 
-static void virtio_video_enc_buf_queue(struct vb2_buffer *vb)
-{
-	struct vb2_v4l2_buffer *v4l2_vb = to_vb2_v4l2_buffer(vb);
-	struct virtio_video_stream *stream = vb2_get_drv_priv(vb->vb2_queue);
-
-	v4l2_m2m_buf_queue(stream->fh.m2m_ctx, v4l2_vb);
-
-}
-
 static int virtio_video_enc_start_streaming(struct vb2_queue *vq,
 					unsigned int count)
 {
@@ -72,7 +63,7 @@ static const struct vb2_ops virtio_video_enc_qops = {
 	.queue_setup	 = virtio_video_queue_setup,
 	.buf_init	 = virtio_video_buf_init,
 	.buf_cleanup	 = virtio_video_buf_cleanup,
-	.buf_queue	 = virtio_video_enc_buf_queue,
+	.buf_queue	 = virtio_video_buf_queue,
 	.start_streaming = virtio_video_enc_start_streaming,
 	.stop_streaming  = virtio_video_enc_stop_streaming,
 	.wait_prepare	 = vb2_ops_wait_prepare,

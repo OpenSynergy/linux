@@ -22,50 +22,6 @@
 
 #include "virtio_video.h"
 
-static void virtio_video_dec_buf_queue(struct vb2_buffer *vb)
-{
-	int i, ret;
-	struct vb2_buffer *src_buf;
-	struct vb2_v4l2_buffer *src_vb;
-	struct virtio_video_buffer *virtio_vb;
-	uint32_t data_size[VB2_MAX_PLANES] = {0};
-	struct vb2_v4l2_buffer *v4l2_vb = to_vb2_v4l2_buffer(vb);
-	struct virtio_video_stream *stream = vb2_get_drv_priv(vb->vb2_queue);
-	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct virtio_video *vv = vvd->vv;
-
-	v4l2_m2m_buf_queue(stream->fh.m2m_ctx, v4l2_vb);
-
-	if ((stream->state != STREAM_STATE_INIT) ||
-	    !V4L2_TYPE_IS_OUTPUT(vb->vb2_queue->type))
-		return;
-
-	src_vb = v4l2_m2m_next_src_buf(stream->fh.m2m_ctx);
-	if (!src_vb) {
-		v4l2_err(&vv->v4l2_dev, "no src buf during initialization\n");
-		return;
-	}
-
-	src_buf = &src_vb->vb2_buf;
-	for (i = 0; i < src_buf->num_planes; ++i)
-		data_size[i] = src_buf->planes[i].bytesused;
-
-	virtio_vb = to_virtio_vb(src_buf);
-
-	ret = virtio_video_cmd_resource_queue(vv, stream->stream_id,
-					      virtio_vb, data_size,
-					      src_buf->num_planes,
-					      VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to queue an src buffer\n");
-		return;
-	}
-
-	virtio_vb->queued = true;
-	stream->src_cleared = false;
-	src_vb = v4l2_m2m_src_buf_remove(stream->fh.m2m_ctx);
-}
-
 static int virtio_video_dec_start_streaming(struct vb2_queue *vq,
 					    unsigned int count)
 {
@@ -98,7 +54,7 @@ static const struct vb2_ops virtio_video_dec_qops = {
 	.queue_setup	 = virtio_video_queue_setup,
 	.buf_init	 = virtio_video_buf_init,
 	.buf_cleanup	 = virtio_video_buf_cleanup,
-	.buf_queue	 = virtio_video_dec_buf_queue,
+	.buf_queue	 = virtio_video_buf_queue,
 	.start_streaming = virtio_video_dec_start_streaming,
 	.stop_streaming  = virtio_video_dec_stop_streaming,
 	.wait_prepare	 = vb2_ops_wait_prepare,

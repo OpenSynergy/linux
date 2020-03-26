@@ -140,6 +140,33 @@ void virtio_video_buf_cleanup(struct vb2_buffer *vb)
 	virtio_video_resource_id_put(vv, virtio_vb->resource_id);
 }
 
+void virtio_video_buf_queue(struct vb2_buffer *vb)
+{
+	int i, ret;
+	struct virtio_video_buffer *virtio_vb;
+	uint32_t data_size[VB2_MAX_PLANES] = {0};
+	struct virtio_video_stream *stream = vb2_get_drv_priv(vb->vb2_queue);
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct virtio_video *vv = vvd->vv;
+
+	for (i = 0; i < vb->num_planes; ++i)
+		data_size[i] = vb->planes[i].bytesused;
+
+	virtio_vb = to_virtio_vb(vb);
+
+	ret = virtio_video_cmd_resource_queue(vv, stream->stream_id,
+					      virtio_vb, data_size,
+					      vb->num_planes,
+					      to_virtio_queue_type(vb->type));
+	if (ret) {
+		v4l2_err(&vv->v4l2_dev, "failed to queue buffer\n");
+		return;
+	}
+
+	virtio_vb->queued = true;
+	stream->src_cleared = false;
+}
+
 int virtio_video_qbuf(struct file *file, void *priv,
 		      struct v4l2_buffer *buf)
 {
@@ -662,88 +689,6 @@ void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
 	v4l2_m2m_buf_done(v4l2_vb, done_state);
 }
 
-static void virtio_video_worker(struct work_struct *work)
-{
-	unsigned int i;
-	int ret;
-	struct vb2_buffer *vb2_buf;
-	struct vb2_v4l2_buffer *src_vb, *dst_vb;
-	struct virtio_video_buffer *virtio_vb;
-	struct virtio_video_stream *stream = work2stream(work);
-	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct vb2_queue *src_vq =
-		v4l2_m2m_get_vq(stream->fh.m2m_ctx,
-				V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
-	struct vb2_queue *dst_vq =
-		v4l2_m2m_get_vq(stream->fh.m2m_ctx,
-				V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
-	struct virtio_video *vv = vvd->vv;
-	uint32_t data_size[VB2_MAX_PLANES] = {0};
-
-	mutex_lock(dst_vq->lock);
-	for (;;) {
-		dst_vb = v4l2_m2m_next_dst_buf(stream->fh.m2m_ctx);
-		if (dst_vb == NULL)
-			break;
-
-		vb2_buf = &dst_vb->vb2_buf;
-		virtio_vb = to_virtio_vb(vb2_buf);
-
-		for (i = 0; i < vb2_buf->num_planes; ++i)
-			data_size[i] = vb2_buf->planes[i].bytesused;
-
-		ret = virtio_video_cmd_resource_queue
-			(vv, stream->stream_id, virtio_vb, data_size,
-			 vb2_buf->num_planes, VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
-		if (ret) {
-			v4l2_err(&vv->v4l2_dev,
-				  "failed to queue a dst buffer\n");
-			v4l2_m2m_job_finish(vvd->m2m_dev, stream->fh.m2m_ctx);
-			mutex_unlock(dst_vq->lock);
-			return;
-		}
-
-		virtio_vb->queued = true;
-		stream->dst_cleared = false;
-		dst_vb = v4l2_m2m_dst_buf_remove(stream->fh.m2m_ctx);
-	}
-	mutex_unlock(dst_vq->lock);
-
-	mutex_lock(src_vq->lock);
-	for (;;) {
-		if (stream->state == STREAM_STATE_DRAIN)
-			break;
-
-		src_vb = v4l2_m2m_next_src_buf(stream->fh.m2m_ctx);
-		if (src_vb == NULL)
-			break;
-
-		vb2_buf = &src_vb->vb2_buf;
-		virtio_vb = to_virtio_vb(vb2_buf);
-
-		for (i = 0; i < vb2_buf->num_planes; ++i)
-			data_size[i] = vb2_buf->planes[i].bytesused;
-
-		ret = virtio_video_cmd_resource_queue
-			(vv, stream->stream_id, virtio_vb, data_size,
-			 vb2_buf->num_planes, VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
-		if (ret) {
-			v4l2_err(&vv->v4l2_dev,
-				  "failed to queue an src buffer\n");
-			v4l2_m2m_job_finish(vvd->m2m_dev, stream->fh.m2m_ctx);
-			mutex_unlock(src_vq->lock);
-			return;
-		}
-
-		virtio_vb->queued = true;
-		stream->src_cleared = false;
-		src_vb = v4l2_m2m_src_buf_remove(stream->fh.m2m_ctx);
-	}
-	mutex_unlock(src_vq->lock);
-
-	v4l2_m2m_job_finish(vvd->m2m_dev, stream->fh.m2m_ctx);
-}
-
 static int virtio_video_device_open(struct file *file)
 {
 	int ret;
@@ -830,7 +775,6 @@ static int virtio_video_device_open(struct file *file)
 	}
 
 	mutex_init(&stream->vq_mutex);
-	INIT_WORK(&stream->work, virtio_video_worker);
 	v4l2_fh_init(&stream->fh, video_dev);
 	stream->fh.ctrl_handler = &stream->ctrl_handler;
 
@@ -918,25 +862,7 @@ static const struct v4l2_file_operations virtio_video_device_fops = {
 
 static void virtio_video_device_run(void *priv)
 {
-	struct virtio_video_stream *stream = priv;
-	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
 
-	queue_work(vvd->workqueue, &stream->work);
-}
-
-static int virtio_video_device_job_ready(void *priv)
-{
-	struct virtio_video_stream *stream = priv;
-
-	if (stream->state == STREAM_STATE_STOPPED ||
-	    stream->state == STREAM_STATE_ERR)
-		return 0;
-
-	if (v4l2_m2m_num_src_bufs_ready(stream->fh.m2m_ctx) > 0 ||
-	    v4l2_m2m_num_dst_bufs_ready(stream->fh.m2m_ctx) > 0)
-		return 1;
-
-	return 0;
 }
 
 static void virtio_video_device_job_abort(void *priv)
@@ -949,7 +875,6 @@ static void virtio_video_device_job_abort(void *priv)
 
 static const struct v4l2_m2m_ops virtio_video_device_m2m_ops = {
 	.device_run	= virtio_video_device_run,
-	.job_ready	= virtio_video_device_job_ready,
 	.job_abort	= virtio_video_device_job_abort,
 };
 
@@ -988,14 +913,6 @@ static int virtio_video_device_register(struct virtio_video_device *vvd)
 		return ret;
 	}
 
-	vvd->workqueue = alloc_ordered_workqueue(vd->name,
-						 WQ_MEM_RECLAIM | WQ_FREEZABLE);
-	if (!vvd->workqueue) {
-		v4l2_err(&vv->v4l2_dev, "failed to create a workqueue");
-		video_unregister_device(vd);
-		return -ENOMEM;
-	}
-
 	list_add(&vvd->devices_list_entry, &vv->devices_list);
 	v4l2_info(&vv->v4l2_dev, "Device '%s' registered as /dev/video%d\n",
 		  vd->name, vd->num);
@@ -1009,8 +926,6 @@ static void virtio_video_device_unregister(struct virtio_video_device *vvd)
 		return;
 
 	list_del(&vvd->devices_list_entry);
-	flush_workqueue(vvd->workqueue);
-	destroy_workqueue(vvd->workqueue);
 	video_unregister_device(&vvd->video_dev);
 }
 

@@ -160,8 +160,6 @@ struct virtio_video_device {
 
 	struct v4l2_m2m_dev *m2m_dev;
 
-	struct workqueue_struct *workqueue;
-
 	struct list_head devices_list_entry;
 	/* VIRTIO_VIDEO_FUNC_ */
 	uint32_t type;
@@ -200,7 +198,6 @@ struct virtio_video_stream {
 	bool dst_cleared;
 	bool src_destroyed;
 	bool dst_destroyed;
-	struct work_struct work;
 	struct video_format_frame *current_frame;
 };
 
@@ -244,11 +241,6 @@ static inline struct virtio_video_stream *ctrl2stream(struct v4l2_ctrl *ctrl)
 {
 	return container_of(ctrl->handler, struct virtio_video_stream,
 			    ctrl_handler);
-}
-
-static inline struct virtio_video_stream *work2stream(struct work_struct *work)
-{
-	return container_of(work, struct virtio_video_stream, work);
 }
 
 static inline struct virtio_video_buffer *to_virtio_vb(struct vb2_buffer *vb)
@@ -361,6 +353,7 @@ int virtio_video_queue_setup(struct vb2_queue *vq, unsigned int *num_buffers,
 			     struct device *alloc_devs[]);
 int virtio_video_buf_init(struct vb2_buffer *vb);
 void virtio_video_buf_cleanup(struct vb2_buffer *vb);
+void virtio_video_buf_queue(struct vb2_buffer *vb);
 int virtio_video_qbuf(struct file *file, void *priv,
 		      struct v4l2_buffer *buf);
 int virtio_video_dqbuf(struct file *file, void *priv,
