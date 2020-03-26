@@ -374,6 +374,7 @@ int virtio_video_g_selection(struct file *file, void *fh,
 	}
 
 	switch (sel->target) {
+	case V4L2_SEL_TGT_COMPOSE:
 	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
 	case V4L2_SEL_TGT_COMPOSE_PADDED:
 		sel->r.width = info->frame_width;
