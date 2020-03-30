@@ -355,16 +355,19 @@ static void virtio_video_event_cb(struct virtio_video *vv,
 	struct virtio_video_stream *stream;
 	struct virtio_video_event *event =
 		(struct virtio_video_event *)vbuf->resp_buf;
+	uint32_t stream_id = event->stream_id;
 
-	stream = idr_find(&vv->stream_idr, event->stream_id);
+	stream = idr_find(&vv->stream_idr, stream_id);
 	if (!stream) {
-		v4l2_warn(&vv->v4l2_dev, "no stream %u found for event\n",
-			  event->stream_id);
+		v4l2_err(&vv->v4l2_dev, "stream_id=%u not found for event\n",
+			 stream_id);
 		return;
 	}
 
 	switch (le32_to_cpu(event->event_type)) {
 	case VIRTIO_VIDEO_EVENT_DECODER_RESOLUTION_CHANGED:
+		v4l2_dbg(1, vv->debug, &vv->v4l2_dev,
+			 "stream_id=%u: resolution change event\n", stream_id);
 		virtio_video_cmd_get_params(vv, stream,
 					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
 		virtio_video_queue_res_chg_event(stream);
@@ -374,18 +377,21 @@ static void virtio_video_event_cb(struct virtio_video *vv,
 		}
 		break;
 	case VIRTIO_VIDEO_EVENT_ERROR:
+		v4l2_err(&vv->v4l2_dev, "stream_id=%i: error event\n",
+			 stream_id);
 		stream->state = STREAM_STATE_ERR;
 		virtio_video_handle_error(stream);
 		break;
 	default:
-		v4l2_warn(&vv->v4l2_dev, "failed to queue event buffer\n");
+		v4l2_warn(&vv->v4l2_dev, "stream_id=%i: unknown event\n",
+			  stream_id);
 		break;
 	}
 
 	memset(vbuf->resp_buf, 0, vbuf->resp_size);
 	ret = virtio_video_queue_event_buffer(vv, vbuf);
 	if (ret)
-		v4l2_warn(&vv->v4l2_dev, "queue event buffer failed\n");
+		v4l2_err(&vv->v4l2_dev, "failed to queue event buffer\n");
 }
 
 int virtio_video_alloc_events(struct virtio_video *vv, size_t num)
@@ -402,8 +408,11 @@ int virtio_video_alloc_events(struct virtio_video *vv, size_t num)
 			return PTR_ERR(vbuf);
 
 		ret = virtio_video_queue_event_buffer(vv, vbuf);
-		if (ret)
+		if (ret) {
+			v4l2_err(&vv->v4l2_dev,
+				 "failed to queue event buffer\n");
 			return ret;
+		}
 	}
 
 	return 0;
