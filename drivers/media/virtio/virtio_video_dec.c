@@ -48,6 +48,8 @@ static void virtio_video_dec_stop_streaming(struct vb2_queue *vq)
                 queue_type = VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT;
 
         virtio_video_clear_queue_and_release_buffers(stream, queue_type);
+
+	vb2_wait_for_all_buffers(vq);
 }
 
 static const struct vb2_ops virtio_video_dec_qops = {

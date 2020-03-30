@@ -53,6 +53,8 @@ static void virtio_video_enc_stop_streaming(struct vb2_queue *vq)
 	if (ret)
 		return;
 
+	vb2_wait_for_all_buffers(vq);
+
 	if (V4L2_TYPE_IS_OUTPUT(vq->type))
 		stream->state = STREAM_STATE_STOPPED;
 	else
