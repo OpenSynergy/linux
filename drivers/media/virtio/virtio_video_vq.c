@@ -371,15 +371,21 @@ static void virtio_video_event_cb(struct virtio_video *vv,
 		virtio_video_cmd_get_params(vv, stream,
 					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
 		virtio_video_queue_res_chg_event(stream);
+		spin_lock(&stream->state_lock);
 		if (stream->state == STREAM_STATE_INIT) {
 			stream->state = STREAM_STATE_DYNAMIC_RES_CHANGE;
+			spin_unlock(&stream->state_lock);
 			wake_up(&vv->wq);
+		} else {
+			spin_unlock(&stream->state_lock);
 		}
 		break;
 	case VIRTIO_VIDEO_EVENT_ERROR:
 		v4l2_err(&vv->v4l2_dev, "stream_id=%i: error event\n",
 			 stream_id);
+		spin_lock(&stream->state_lock);
 		stream->state = STREAM_STATE_ERROR;
+		spin_unlock(&stream->state_lock);
 		virtio_video_handle_error(stream);
 		break;
 	default:

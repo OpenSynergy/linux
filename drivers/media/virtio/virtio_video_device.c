@@ -685,7 +685,10 @@ void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
 
 	if (flags & VIRTIO_VIDEO_BUFFER_FLAG_EOS) {
 		v4l2_vb->flags |= V4L2_BUF_FLAG_LAST;
-		stream->state = STREAM_STATE_STOPPED;
+		spin_lock(&stream->state_lock);
+		if (stream->state != STREAM_STATE_ERROR)
+			stream->state = STREAM_STATE_STOPPED;
+		spin_unlock(&stream->state_lock);
 		virtio_video_queue_eos_event(stream);
 	}
 
@@ -769,6 +772,7 @@ static int virtio_video_device_open(struct file *file)
 			goto err_stream_create;
 	}
 
+	spin_lock_init(&stream->state_lock);
 	mutex_init(&stream->vq_mutex);
 	v4l2_fh_init(&stream->fh, video_dev);
 	stream->fh.ctrl_handler = &stream->ctrl_handler;

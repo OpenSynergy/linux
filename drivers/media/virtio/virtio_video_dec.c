@@ -27,12 +27,16 @@ static int virtio_video_dec_start_streaming(struct vb2_queue *vq,
 {
 	struct virtio_video_stream *stream = vb2_get_drv_priv(vq);
 
-	if (stream->state == STREAM_STATE_ERROR)
+	spin_lock(&stream->state_lock);
+	if (stream->state == STREAM_STATE_ERROR) {
+		spin_unlock(&stream->state_lock);
 		return -EIO;
+	}
 
 	if (!V4L2_TYPE_IS_OUTPUT(vq->type) &&
 	    stream->state >= STREAM_STATE_INIT)
 		stream->state = STREAM_STATE_RUNNING;
+	spin_unlock(&stream->state_lock);
 
 	return 0;
 }
@@ -220,7 +224,9 @@ static int virtio_video_decoder_cmd(struct file *file, void *fh,
 			return ret;
 		}
 
+		spin_lock(&stream->state_lock);
 		stream->state = STREAM_STATE_DRAIN;
+		spin_unlock(&stream->state_lock);
 		break;
 	default:
 		return -EINVAL;
@@ -311,8 +317,10 @@ static int virtio_video_dec_s_fmt(struct file *file, void *fh,
 		return ret;
 
 	if (V4L2_TYPE_IS_OUTPUT(f->type)) {
+		spin_lock(&stream->state_lock);
 		if (stream->state == STREAM_STATE_IDLE)
 			stream->state = STREAM_STATE_INIT;
+		spin_unlock(&stream->state_lock);
 	}
 
 	return 0;

@@ -187,6 +187,7 @@ enum video_stream_state {
 struct virtio_video_stream {
 	uint32_t stream_id;
 	enum video_stream_state state;
+	spinlock_t state_lock;
 	struct video_device *video_dev;
 	struct v4l2_fh fh;
 	struct mutex vq_mutex;
