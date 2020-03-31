@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /* Driver for virtio video device.
  *
- * Copyright 2019 OpenSynergy GmbH.
+ * Copyright 2020 OpenSynergy GmbH.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,8 +22,6 @@
 #include <media/videobuf2-dma-sg.h>
 
 #include "virtio_video.h"
-#include "virtio_video_dec.h"
-#include "virtio_video_enc.h"
 
 int virtio_video_queue_setup(struct vb2_queue *vq, unsigned int *num_buffers,
 			     unsigned int *num_planes, unsigned int sizes[],
@@ -195,9 +193,10 @@ int virtio_video_querycap(struct file *file, void *fh,
 	struct virtio_video_device *vvd = video_drvdata(file);
 
 	if (strscpy(cap->driver, DRIVER_NAME, sizeof(cap->driver)) < 0)
-		 v4l2_err(&vvd->vv->v4l2_dev, "failed to copy driver name\n");
+		v4l2_err(&vvd->vv->v4l2_dev, "failed to copy driver name\n");
 	if (strscpy(cap->card, video_dev->name, sizeof(cap->card)) < 0)
-		 v4l2_err(&vvd->vv->v4l2_dev, "failed to copy card name\n");
+		v4l2_err(&vvd->vv->v4l2_dev, "failed to copy card name\n");
+
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "virtio:%s",
 		 video_dev->name);
 
@@ -214,9 +213,11 @@ int virtio_video_enum_framesizes(struct file *file, void *fh,
 	struct virtio_video_format_frame *frame;
 	int idx = f->index;
 
-	fmt = find_video_format(&vvd->input_fmt_list, f->pixel_format);
+	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
+					     f->pixel_format);
 	if (fmt == NULL)
-		fmt = find_video_format(&vvd->output_fmt_list, f->pixel_format);
+		fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
+						     f->pixel_format);
 	if (fmt == NULL)
 		return -EINVAL;
 
@@ -244,16 +245,16 @@ int virtio_video_enum_framesizes(struct file *file, void *fh,
 	return 0;
 }
 
-static bool in_stepped_interval(uint32_t int_start, uint32_t int_end,
-				uint32_t step, uint32_t point)
+static bool in_stepped_interval(struct virtio_video_format_range range,
+				uint32_t point)
 {
-	if (point < int_start || point > int_end)
+	if (point < range.min || point > range.max)
 		return false;
 
-	if (step == 0 && int_start == int_end && int_start == point)
+	if (range.step == 0 && range.min == range.max && range.min == point)
 		return true;
 
-	if (step != 0 && (point - int_start) % step == 0)
+	if (range.step != 0 && (point - range.min) % range.step == 0)
 		return true;
 
 	return false;
@@ -271,19 +272,19 @@ int virtio_video_enum_framemintervals(struct file *file, void *fh,
 	int idx = f->index;
 	int f_idx;
 
-	fmt = find_video_format(&vvd->input_fmt_list, f->pixel_format);
+	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
+					     f->pixel_format);
 	if (fmt == NULL)
-		fmt = find_video_format(&vvd->output_fmt_list, f->pixel_format);
+		fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
+						     f->pixel_format);
 	if (fmt == NULL)
 		return -EINVAL;
 
 	for (f_idx = 0; f_idx <= fmt->desc.num_frames; f_idx++) {
 		frm = &fmt->frames[f_idx];
 		frame = &frm->frame;
-		if (in_stepped_interval(frame->width.min, frame->width.max,
-					frame->width.step, f->width) &&
-		   in_stepped_interval(frame->height.min, frame->height.max,
-					frame->height.step, f->height))
+		if (in_stepped_interval(frame->width, f->width) &&
+		    in_stepped_interval(frame->height, f->height))
 			break;
 	}
 
@@ -456,7 +457,8 @@ int virtio_video_g_selection(struct file *file, void *fh,
 		break;
 	default:
 		v4l2_dbg(1, vvd->vv->debug, &vvd->vv->v4l2_dev,
-			 "unsupported/invalid selection target\n");
+			 "unsupported/invalid selection target: %d\n",
+			 sel->target);
 		return -EINVAL;
 	}
 
@@ -478,11 +480,11 @@ int virtio_video_try_fmt(struct virtio_video_stream *stream,
 		return -EIO;
 
 	if (V4L2_TYPE_IS_OUTPUT(f->type))
-		fmt = find_video_format(&vvd->input_fmt_list,
-					pix_mp->pixelformat);
+		fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
+						     pix_mp->pixelformat);
 	else
-		fmt = find_video_format(&vvd->output_fmt_list,
-					pix_mp->pixelformat);
+		fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
+						     pix_mp->pixelformat);
 
 	if (!fmt) {
 		if (f->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
@@ -523,6 +525,9 @@ int virtio_video_try_fmt(struct virtio_video_stream *stream,
 
 	if (!found) {
 		frm = &fmt->frames[idx];
+		if (!frm)
+			return -EINVAL;
+
 		frame = &frm->frame;
 		pix_mp->width = clamp(pix_mp->width, frame->width.min,
 				      frame->width.max);
@@ -546,7 +551,8 @@ static int virtio_video_queue_free(struct virtio_video *vv,
 {
 	int ret;
 	uint32_t queue_type = to_virtio_queue_type(type);
-	bool *destroyed = &stream->resources_destroyed;
+	bool *destroyed = V4L2_TYPE_IS_OUTPUT(type) ?
+		&stream->src_destroyed : &stream->dst_destroyed;
 
 	ret = virtio_video_cmd_resource_destroy_all(vv, stream,
 						    queue_type);
@@ -559,8 +565,9 @@ static int virtio_video_queue_free(struct virtio_video *vv,
 	ret = wait_event_timeout(vv->wq, *destroyed, 5 * HZ);
 	if (ret == 0) {
 		v4l2_err(&vv->v4l2_dev,
-			 "timed out waiting for resources destroy\n");
-		return -1;
+			 "timed out waiting for resource destruction for %s\n",
+			 V4L2_TYPE_IS_OUTPUT(type) ? "OUTPUT" : "CAPTURE");
+		return -EINVAL;
 	}
 
 	return 0;
@@ -692,6 +699,13 @@ void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
 		virtio_video_queue_eos_event(stream);
 	}
 
+	if ((flags & VIRTIO_VIDEO_BUFFER_FLAG_ERR) ||
+	    (flags & VIRTIO_VIDEO_BUFFER_FLAG_EOS)) {
+		vb->planes[0].bytesused = 0;
+		v4l2_m2m_buf_done(v4l2_vb, done_state);
+		return;
+	}
+
 	if (!V4L2_TYPE_IS_OUTPUT(vb2_queue->type)) {
 		switch (vvd->type) {
 		case VIRTIO_VIDEO_DEVICE_ENCODER:
@@ -723,22 +737,9 @@ static int virtio_video_device_open(struct file *file)
 	struct virtio_video_device *vvd = video_drvdata(file);
 	struct virtio_video *vv = vvd->vv;
 
-	switch (vvd->type) {
-	case VIRTIO_VIDEO_DEVICE_ENCODER:
-		default_fmt = list_first_entry_or_null(&vvd->output_fmt_list,
-						       struct video_format,
-						       formats_list_entry);
-		break;
-	case VIRTIO_VIDEO_DEVICE_DECODER:
-		default_fmt = list_first_entry_or_null(&vvd->input_fmt_list,
-						       struct video_format,
-						       formats_list_entry);
-		break;
-	default:
-		v4l2_err(&vv->v4l2_dev, "unsupported device type\n");
-		return -EIO;
-	}
-
+	default_fmt = list_first_entry_or_null(vvd->ops->get_fmt_list(vvd),
+					       struct video_format,
+					       formats_list_entry);
 	if (!default_fmt) {
 		v4l2_err(&vv->v4l2_dev, "device failed to start\n");
 		return -EIO;
@@ -760,6 +761,8 @@ static int virtio_video_device_open(struct file *file)
 	stream->video_dev = video_dev;
 	stream->stream_id = stream_id;
 	stream->state = STREAM_STATE_IDLE;
+	stream->src_destroyed = true;
+	stream->dst_destroyed = true;
 
 	ret = virtio_video_stream_get_params(vv, stream);
 	if (ret)
@@ -777,20 +780,11 @@ static int virtio_video_device_open(struct file *file)
 	v4l2_fh_init(&stream->fh, video_dev);
 	stream->fh.ctrl_handler = &stream->ctrl_handler;
 
-	switch (vvd->type) {
-	case VIRTIO_VIDEO_DEVICE_ENCODER:
-		stream->fh.m2m_ctx =
-			v4l2_m2m_ctx_init(vvd->m2m_dev, stream,
-					  &virtio_video_enc_init_queues);
-		break;
-	case VIRTIO_VIDEO_DEVICE_DECODER:
-		stream->fh.m2m_ctx =
-			v4l2_m2m_ctx_init(vvd->m2m_dev, stream,
-					  &virtio_video_dec_init_queues);
-		break;
-	default:
-		v4l2_err(&vv->v4l2_dev, "unsupported device type\n");
-		goto err_stream_create;
+	stream->fh.m2m_ctx = v4l2_m2m_ctx_init(vvd->m2m_dev, stream,
+					       vvd->ops->init_queues);
+	if (IS_ERR(stream->fh.m2m_ctx)) {
+		ret = PTR_ERR(stream->fh.m2m_ctx);
+		goto err_init_ctx;
 	}
 
 	v4l2_m2m_set_src_buffered(stream->fh.m2m_ctx, true);
@@ -798,30 +792,22 @@ static int virtio_video_device_open(struct file *file)
 	file->private_data = &stream->fh;
 	v4l2_fh_add(&stream->fh);
 
-	switch (vvd->type) {
-	case VIRTIO_VIDEO_DEVICE_ENCODER:
-		ret = virtio_video_enc_init_ctrls(stream);
-		break;
-	case VIRTIO_VIDEO_DEVICE_DECODER:
-		ret = virtio_video_dec_init_ctrls(stream);
-		break;
-	default:
-		ret = 0;
-		break;
-	}
-
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to init controls\n");
-		goto err_init_ctrls;
+	if (vvd->ops->init_ctrls) {
+		ret = vvd->ops->init_ctrls(stream);
+		if (ret) {
+			v4l2_err(&vv->v4l2_dev, "failed to init controls\n");
+			goto err_init_ctrls;
+		}
 	}
 	return 0;
 
 err_init_ctrls:
 	v4l2_fh_del(&stream->fh);
-	v4l2_fh_exit(&stream->fh);
 	mutex_lock(video_dev->lock);
 	v4l2_m2m_ctx_release(stream->fh.m2m_ctx);
 	mutex_unlock(video_dev->lock);
+err_init_ctx:
+	v4l2_fh_exit(&stream->fh);
 err_stream_create:
 	virtio_video_stream_id_put(vv, stream_id);
 	kfree(stream);
@@ -837,10 +823,10 @@ static int virtio_video_device_release(struct file *file)
 	struct virtio_video *vv = vvd->vv;
 
 	v4l2_fh_del(&stream->fh);
-	v4l2_fh_exit(&stream->fh);
 	mutex_lock(video_dev->lock);
 	v4l2_m2m_ctx_release(stream->fh.m2m_ctx);
 	mutex_unlock(video_dev->lock);
+	v4l2_fh_exit(&stream->fh);
 
 	virtio_video_cmd_stream_destroy(vv, stream->stream_id);
 	virtio_video_stream_id_put(vv, stream->stream_id);
@@ -889,21 +875,12 @@ static int virtio_video_device_register(struct virtio_video_device *vvd)
 	vd = &vvd->video_dev;
 	vv = vvd->vv;
 
-	switch (vvd->type) {
-	case VIRTIO_VIDEO_DEVICE_ENCODER:
-		ret = virtio_video_enc_init(vd);
-		break;
-	case VIRTIO_VIDEO_DEVICE_DECODER:
-		ret = virtio_video_dec_init(vd);
-		break;
-	default:
-		v4l2_err(&vv->v4l2_dev, "unknown device type\n");
-		return -EINVAL;
-	}
-
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to init device\n");
-		return ret;
+	if (vvd->ops->init_device) {
+		ret = vvd->ops->init_device(vd);
+		if (ret) {
+			v4l2_err(&vv->v4l2_dev, "failed to init device\n");
+			return ret;
+		}
 	}
 
 	ret = video_register_device(vd, VFL_TYPE_GRABBER, 0);
@@ -979,10 +956,12 @@ virtio_video_device_create(struct virtio_video *vv)
 	switch (vv->vdev->id.device) {
 	case VIRTIO_ID_VIDEO_ENCODER:
 		vvd->type = VIRTIO_VIDEO_DEVICE_ENCODER;
+		virtio_video_enc_init_ops(vvd);
 		break;
 	case VIRTIO_ID_VIDEO_DECODER:
 	default:
 		vvd->type = VIRTIO_VIDEO_DEVICE_DECODER;
+		virtio_video_dec_init_ops(vvd);
 		break;
 	}
 

@@ -29,7 +29,7 @@
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * Copyright (C) 2019 OpenSynergy GmbH.
+ * Copyright (C) 2020 OpenSynergy GmbH.
  */
 
 #ifndef _UAPI_LINUX_VIRTIO_VIDEO_H

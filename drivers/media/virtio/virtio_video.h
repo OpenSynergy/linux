@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /* Common header for virtio video driver.
  *
- * Copyright 2019 OpenSynergy GmbH.
+ * Copyright 2020 OpenSynergy GmbH.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -125,8 +125,6 @@ struct virtio_video_queue {
 
 struct virtio_video {
 	struct v4l2_device v4l2_dev;
-	int instance;
-
 	struct virtio_device *vdev;
 	struct virtio_video_queue commandq;
 	struct virtio_video_queue eventq;
@@ -151,26 +149,6 @@ struct virtio_video {
 
 	int debug;
 	int use_dma_mem;
-};
-
-struct virtio_video_device {
-	struct virtio_video *vv;
-	struct video_device video_dev;
-	struct mutex video_dev_mutex;
-
-	struct v4l2_m2m_dev *m2m_dev;
-
-	struct list_head devices_list_entry;
-	/* VIRTIO_VIDEO_FUNC_ */
-	uint32_t type;
-
-	uint32_t num_input_fmts;
-	struct list_head input_fmt_list;
-
-	uint32_t num_output_fmts;
-	struct list_head output_fmt_list;
-
-	struct list_head controls_fmt_list;
 };
 
 enum video_stream_state {
@@ -199,8 +177,36 @@ struct virtio_video_stream {
 	bool dst_cleared;
 	bool src_destroyed;
 	bool dst_destroyed;
-	bool resources_destroyed;
 	struct video_format_frame *current_frame;
+};
+
+struct virtio_video_device {
+	struct virtio_video *vv;
+	struct video_device video_dev;
+	struct mutex video_dev_mutex;
+
+	struct v4l2_m2m_dev *m2m_dev;
+
+	struct list_head devices_list_entry;
+	/* VIRTIO_VIDEO_FUNC_ */
+	uint32_t type;
+
+	uint32_t num_input_fmts;
+	struct list_head input_fmt_list;
+
+	uint32_t num_output_fmts;
+	struct list_head output_fmt_list;
+
+	struct list_head controls_fmt_list;
+	struct virtio_video_device_ops *ops;
+};
+
+struct virtio_video_device_ops {
+	int (*init_ctrls)(struct virtio_video_stream *stream);
+	int (*init_queues)(void *priv, struct vb2_queue *src_vq,
+			   struct vb2_queue *dst_vq);
+	int (*init_device)(struct video_device *vd);
+	void* (*get_fmt_list)(struct virtio_video_device *vvd);
 };
 
 struct virtio_video_buffer {
@@ -263,7 +269,7 @@ static inline uint32_t to_virtio_queue_type(enum v4l2_buf_type type)
 
 static inline bool within_range(uint32_t min, uint32_t val, uint32_t max)
 {
-	return ((val - min) <= (max - min));
+	return ((min <= val) && (val <= max));
 }
 
 static inline bool needs_alignment(uint32_t val, uint32_t a)
@@ -387,8 +393,8 @@ uint32_t virtio_video_v4l2_control_to_virtio(uint32_t v4l2_control);
 uint32_t virtio_video_v4l2_profile_to_virtio(uint32_t v4l2_profile);
 uint32_t virtio_video_v4l2_level_to_virtio(uint32_t v4l2_level);
 
-struct video_format *find_video_format(struct list_head *fmts_list,
-				       uint32_t fourcc);
+struct video_format *virtio_video_find_video_format(struct list_head *fmts_list,
+						    uint32_t fourcc);
 void virtio_video_format_from_info(struct video_format_info *info,
 				   struct v4l2_pix_format_mplane *pix_mp);
 void virtio_video_format_fill_default_info(struct video_format_info *dst_info,
@@ -401,4 +407,7 @@ int virtio_video_stream_get_params(struct virtio_video *vv,
 				   struct virtio_video_stream *stream);
 int virtio_video_stream_get_controls(struct virtio_video *vv,
 				     struct virtio_video_stream *stream);
+
+void virtio_video_dec_init_ops(struct virtio_video_device *vvd);
+void virtio_video_enc_init_ops(struct virtio_video_device *vvd);
 #endif /* _VIRTIO_VIDEO_H */

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /* Driver for virtio video device.
  *
- * Copyright 2019 OpenSynergy GmbH.
+ * Copyright 2020 OpenSynergy GmbH.
  *
  * Based on drivers/gpu/drm/virtio/virtgpu_vq.c
  * Copyright (C) 2015 Red Hat, Inc.
@@ -513,8 +513,21 @@ static void virtio_video_cmd_destroy_all_cb(struct virtio_video *vv,
 					    struct virtio_video_vbuffer *vbuf)
 {
 	struct virtio_video_stream *stream = vbuf->priv;
+	struct virtio_video_resource_destroy_all *req_p =
+		(struct virtio_video_resource_destroy_all *)vbuf->buf;
 
-	stream->resources_destroyed = true;
+	switch (le32_to_cpu(req_p->queue_type)) {
+	case VIRTIO_VIDEO_QUEUE_TYPE_INPUT:
+		stream->src_destroyed = true;
+		break;
+	case VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT:
+		stream->dst_destroyed = true;
+		break;
+	default:
+		v4l2_err(&vv->v4l2_dev, "invalid queue type: %u\n",
+			 req_p->queue_type);
+		return;
+	}
 
 	wake_up(&vv->wq);
 }

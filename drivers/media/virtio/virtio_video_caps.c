@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /* Driver for virtio video device.
  *
- * Copyright 2019 OpenSynergy GmbH.
+ * Copyright 2020 OpenSynergy GmbH.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,12 +59,12 @@ static void virtio_video_free_fmts(struct virtio_video_device *vvd)
 	virtio_video_free_fmt(&vvd->output_fmt_list);
 }
 
-static void assign_format_range(struct virtio_video_format_range *d_range,
-				struct virtio_video_format_range *s_range)
+static void virtio_video_copy_fmt_range(struct virtio_video_format_range *d_rge,
+					struct virtio_video_format_range *s_rge)
 {
-	d_range->min = le32_to_cpu(s_range->min);
-	d_range->max = le32_to_cpu(s_range->max);
-	d_range->step = le32_to_cpu(s_range->step);
+	d_rge->min = le32_to_cpu(s_rge->min);
+	d_rge->max = le32_to_cpu(s_rge->max);
+	d_rge->step = le32_to_cpu(s_rge->step);
 }
 
 static size_t
@@ -78,7 +78,7 @@ virtio_video_parse_virtio_frame_rate(struct virtio_video_device *vvd,
 		return 0;
 
 	virtio_frame_rate = buf;
-	assign_format_range(f_rate, virtio_frame_rate);
+	virtio_video_copy_fmt_range(f_rate, virtio_frame_rate);
 
 	return sizeof(struct virtio_video_format_range);
 }
@@ -99,8 +99,8 @@ static size_t virtio_video_parse_virtio_frame(struct virtio_video_device *vvd,
 	vv = vvd->vv;
 	virtio_frame = buf;
 
-	assign_format_range(&frame->width, &virtio_frame->width);
-	assign_format_range(&frame->height, &virtio_frame->height);
+	virtio_video_copy_fmt_range(&frame->width, &virtio_frame->width);
+	virtio_video_copy_fmt_range(&frame->height, &virtio_frame->height);
 
 	frame->num_rates = le32_to_cpu(virtio_frame->num_rates);
 	frm->frame_rates = kcalloc(frame->num_rates,
@@ -171,6 +171,7 @@ static size_t virtio_video_parse_virtio_fmt(struct virtio_video_device *vvd,
 int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
 					    void *input_buf, void *output_buf)
 {
+	int ret;
 	struct virtio_video_query_capability_resp *input_resp = input_buf;
 	struct virtio_video_query_capability_resp *output_resp = output_buf;
 	struct video_format *fmt;
@@ -179,14 +180,15 @@ int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
 	size_t offset;
 
 	if (!input_buf || !output_buf || !vvd)
-		return -1;
+		return -EINVAL;
 
 	vv = vvd->vv;
 
 	if (le32_to_cpu(input_resp->num_descs) <= 0 ||
 	    le32_to_cpu(output_resp->num_descs) <= 0) {
 		v4l2_err(&vv->v4l2_dev, "invalid capability response\n");
-		return -1;
+		ret = -EINVAL;
+		goto parse_err;
 	}
 
 	vvd->num_input_fmts = le32_to_cpu(input_resp->num_descs);
@@ -197,17 +199,16 @@ int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
 
 		fmt = kzalloc(sizeof(*fmt), GFP_KERNEL);
 		if (!fmt) {
-			virtio_video_free_fmts(vvd);
-			return -1;
+			ret = -ENOMEM;
+			goto alloc_err;
 		}
 
 		fmt_size = virtio_video_parse_virtio_fmt(vvd, fmt,
 							 input_buf + offset);
 		if (fmt_size == 0) {
 			v4l2_err(&vv->v4l2_dev, "failed to parse input fmt\n");
-			virtio_video_free_fmts(vvd);
-			kfree(fmt);
-			return -1;
+			ret = -ENOENT;
+			goto parse_fmt_err;
 		}
 		offset += fmt_size;
 		list_add(&fmt->formats_list_entry, &vvd->input_fmt_list);
@@ -221,23 +222,29 @@ int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
 
 		fmt = kzalloc(sizeof(*fmt), GFP_KERNEL);
 		if (!fmt) {
-			virtio_video_free_fmts(vvd);
-			return -1;
+			ret = -ENOMEM;
+			goto alloc_err;
 		}
 
 		fmt_size = virtio_video_parse_virtio_fmt(vvd, fmt,
 							 output_buf + offset);
 		if (fmt_size == 0) {
 			v4l2_err(&vv->v4l2_dev, "failed to parse output fmt\n");
-			virtio_video_free_fmts(vvd);
-			kfree(fmt);
-			return -1;
+			ret = -ENOENT;
+			goto parse_fmt_err;
 		}
 		offset += fmt_size;
 		list_add(&fmt->formats_list_entry, &vvd->output_fmt_list);
 	}
 
 	return 0;
+
+parse_fmt_err:
+	kfree(fmt);
+alloc_err:
+	virtio_video_free_fmts(vvd);
+parse_err:
+	return ret;
 }
 
 void virtio_video_clean_capability(struct virtio_video_device *vvd)

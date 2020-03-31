@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /* Decoder for virtio video device.
  *
- * Copyright 2019 OpenSynergy GmbH.
+ * Copyright 2020 OpenSynergy GmbH.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -103,7 +103,9 @@ int virtio_video_dec_init_ctrls(struct virtio_video_stream *stream)
 				V4L2_CID_MIN_BUFFERS_FOR_CAPTURE,
 				MIN_BUFS_MIN, MIN_BUFS_MAX, MIN_BUFS_STEP,
 				MIN_BUFS_DEF);
-	ctrl->flags |= V4L2_CTRL_FLAG_VOLATILE;
+
+	if (ctrl)
+		ctrl->flags |= V4L2_CTRL_FLAG_VOLATILE;
 
 	if (stream->ctrl_handler.error)
 		return stream->ctrl_handler.error;
@@ -360,17 +362,9 @@ static int virtio_video_dec_s_selection(struct file *file, void *fh,
 static const struct v4l2_ioctl_ops virtio_video_dec_ioctl_ops = {
 	.vidioc_querycap	= virtio_video_querycap,
 
-	.vidioc_enum_fmt_vid_cap = virtio_video_dec_enum_fmt_vid_cap,
-	.vidioc_g_fmt_vid_cap	= virtio_video_g_fmt,
-	.vidioc_s_fmt_vid_cap	= virtio_video_dec_s_fmt,
-
 	.vidioc_enum_fmt_vid_cap_mplane = virtio_video_dec_enum_fmt_vid_cap,
 	.vidioc_g_fmt_vid_cap_mplane	= virtio_video_g_fmt,
 	.vidioc_s_fmt_vid_cap_mplane	= virtio_video_dec_s_fmt,
-
-	.vidioc_enum_fmt_vid_out = virtio_video_dec_enum_fmt_vid_out,
-	.vidioc_g_fmt_vid_out	= virtio_video_g_fmt,
-	.vidioc_s_fmt_vid_out	= virtio_video_dec_s_fmt,
 
 	.vidioc_enum_fmt_vid_out_mplane = virtio_video_dec_enum_fmt_vid_out,
 	.vidioc_g_fmt_vid_out_mplane	= virtio_video_g_fmt,
@@ -399,12 +393,31 @@ static const struct v4l2_ioctl_ops virtio_video_dec_ioctl_ops = {
 	.vidioc_unsubscribe_event = v4l2_event_unsubscribe,
 };
 
-int virtio_video_dec_init(struct video_device *vd)
+void *virtio_video_dec_get_fmt_list(struct virtio_video_device *vvd)
+{
+	return &vvd->input_fmt_list;
+}
+
+int virtio_video_dec_init_device(struct video_device *vd)
 {
 	ssize_t num;
 
 	vd->ioctl_ops = &virtio_video_dec_ioctl_ops;
 	num = strscpy(vd->name, "stateful-decoder", sizeof(vd->name));
+	if (num < 0)
+		return num;
 
 	return 0;
+}
+
+void virtio_video_dec_init_ops(struct virtio_video_device *vvd)
+{
+	static struct virtio_video_device_ops ops = {
+		.init_ctrls = virtio_video_dec_init_ctrls,
+		.init_queues = virtio_video_dec_init_queues,
+		.init_device = virtio_video_dec_init_device,
+		.get_fmt_list = virtio_video_dec_get_fmt_list,
+	};
+
+	vvd->ops = &ops;
 }

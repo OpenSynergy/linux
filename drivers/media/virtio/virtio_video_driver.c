@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /* Driver for virtio video device.
  *
- * Copyright 2019 OpenSynergy GmbH.
+ * Copyright 2020 OpenSynergy GmbH.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
