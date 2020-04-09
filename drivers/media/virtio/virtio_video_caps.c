@@ -90,13 +90,11 @@ static size_t virtio_video_parse_virtio_frame(struct virtio_video_device *vvd,
 	struct virtio_video_format_frame *virtio_frame;
 	struct virtio_video_format_frame *frame = &frm->frame;
 	struct virtio_video_format_range *rate;
-	struct virtio_video *vv;
 	size_t idx, offset, extra_size;
 
 	if (!frm || !buf || !vvd || !frame)
 		return 0;
 
-	vv = vvd->vv;
 	virtio_frame = buf;
 
 	virtio_video_copy_fmt_range(&frame->width, &virtio_frame->width);
@@ -115,7 +113,8 @@ static size_t virtio_video_parse_virtio_frame(struct virtio_video_device *vvd,
 							     buf + offset);
 		if (extra_size == 0) {
 			kfree(frm->frame_rates);
-			v4l2_err(&vv->v4l2_dev, "failed to parse frame rate\n");
+			v4l2_err(&vvd->v4l2_dev,
+				 "failed to parse frame rate\n");
 			return 0;
 		}
 		offset += extra_size;
@@ -130,13 +129,11 @@ static size_t virtio_video_parse_virtio_fmt(struct virtio_video_device *vvd,
 	struct virtio_video_format_desc *virtio_fmt_desc;
 	struct virtio_video_format_desc *fmt_desc;
 	struct video_format_frame *frame;
-	struct virtio_video *vv;
 	size_t idx, offset, extra_size;
 
 	if (!fmt || !buf || !vvd)
 		return 0;
 
-	vv = vvd->vv;
 	virtio_fmt_desc = buf;
 	fmt_desc = &fmt->desc;
 
@@ -159,7 +156,7 @@ static size_t virtio_video_parse_virtio_fmt(struct virtio_video_device *vvd,
 							buf + offset);
 		if (extra_size == 0) {
 			kfree(fmt->frames);
-			v4l2_err(&vv->v4l2_dev, "failed to parse frame\n");
+			v4l2_err(&vvd->v4l2_dev, "failed to parse frame\n");
 			return 0;
 		}
 		offset += extra_size;
@@ -175,18 +172,15 @@ int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
 	struct virtio_video_query_capability_resp *input_resp = input_buf;
 	struct virtio_video_query_capability_resp *output_resp = output_buf;
 	struct video_format *fmt;
-	struct virtio_video *vv;
 	int fmt_idx;
 	size_t offset;
 
 	if (!input_buf || !output_buf || !vvd)
 		return -EINVAL;
 
-	vv = vvd->vv;
-
 	if (le32_to_cpu(input_resp->num_descs) <= 0 ||
 	    le32_to_cpu(output_resp->num_descs) <= 0) {
-		v4l2_err(&vv->v4l2_dev, "invalid capability response\n");
+		v4l2_err(&vvd->v4l2_dev, "invalid capability response\n");
 		ret = -EINVAL;
 		goto parse_err;
 	}
@@ -206,7 +200,7 @@ int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
 		fmt_size = virtio_video_parse_virtio_fmt(vvd, fmt,
 							 input_buf + offset);
 		if (fmt_size == 0) {
-			v4l2_err(&vv->v4l2_dev, "failed to parse input fmt\n");
+			v4l2_err(&vvd->v4l2_dev, "failed to parse input fmt\n");
 			ret = -ENOENT;
 			goto parse_fmt_err;
 		}
@@ -229,7 +223,8 @@ int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
 		fmt_size = virtio_video_parse_virtio_fmt(vvd, fmt,
 							 output_buf + offset);
 		if (fmt_size == 0) {
-			v4l2_err(&vv->v4l2_dev, "failed to parse output fmt\n");
+			v4l2_err(&vvd->v4l2_dev,
+				 "failed to parse output fmt\n");
 			ret = -ENOENT;
 			goto parse_fmt_err;
 		}
@@ -285,7 +280,6 @@ static int virtio_video_parse_control_levels(struct virtio_video_device *vvd,
 	struct virtio_video_query_control_resp *resp_buf;
 	struct virtio_video_query_control_resp_level *l_resp_buf;
 	struct video_control_fmt_data *level;
-	struct virtio_video *vv;
 	uint32_t *virtio_levels;
 	uint32_t virtio_format, num_levels, mask = 0;
 	int max = 0, min = UINT_MAX;
@@ -294,8 +288,7 @@ static int virtio_video_parse_control_levels(struct virtio_video_device *vvd,
 	if (!vvd)
 		return -EINVAL;
 
-	vv = vvd->vv;
-	resp_size = vv->max_resp_len;
+	resp_size = vvd->max_resp_len;
 
 	virtio_format = virtio_video_v4l2_format_to_virtio(fmt->format);
 
@@ -305,17 +298,17 @@ static int virtio_video_parse_control_levels(struct virtio_video_device *vvd,
 		goto lvl_err;
 	}
 
-	vv->got_control = false;
-	ret = virtio_video_query_control_level(vv, resp_buf, resp_size,
+	vvd->got_control = false;
+	ret = virtio_video_query_control_level(vvd, resp_buf, resp_size,
 					       virtio_format);
 	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to query level\n");
+		v4l2_err(&vvd->v4l2_dev, "failed to query level\n");
 		goto lvl_err;
 	}
 
-	ret = wait_event_timeout(vv->wq, vv->got_control, 5 * HZ);
+	ret = wait_event_timeout(vvd->wq, vvd->got_control, 5 * HZ);
 	if (ret == 0) {
-		v4l2_err(&vv->v4l2_dev,
+		v4l2_err(&vvd->v4l2_dev,
 			 "timed out waiting for query level\n");
 		ret = -EIO;
 		goto lvl_err;
@@ -371,7 +364,6 @@ static int virtio_video_parse_control_profiles(struct virtio_video_device *vvd,
 	struct virtio_video_query_control_resp *resp_buf;
 	struct virtio_video_query_control_resp_profile *p_resp_buf;
 	struct video_control_fmt_data *profile;
-	struct virtio_video *vv;
 	uint32_t virtio_format, num_profiles, mask = 0;
 	uint32_t *virtio_profiles;
 	int max = 0, min = UINT_MAX;
@@ -380,8 +372,7 @@ static int virtio_video_parse_control_profiles(struct virtio_video_device *vvd,
 	if (!vvd)
 		return -EINVAL;
 
-	vv = vvd->vv;
-	resp_size = vv->max_resp_len;
+	resp_size = vvd->max_resp_len;
 	virtio_format = virtio_video_v4l2_format_to_virtio(fmt->format);
 	resp_buf = kzalloc(resp_size, GFP_KERNEL);
 	if (IS_ERR(resp_buf)) {
@@ -389,17 +380,17 @@ static int virtio_video_parse_control_profiles(struct virtio_video_device *vvd,
 		goto prf_err;
 	}
 
-	vv->got_control = false;
-	ret = virtio_video_query_control_profile(vv, resp_buf, resp_size,
+	vvd->got_control = false;
+	ret = virtio_video_query_control_profile(vvd, resp_buf, resp_size,
 						 virtio_format);
 	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to query profile\n");
+		v4l2_err(&vvd->v4l2_dev, "failed to query profile\n");
 		goto prf_err;
 	}
 
-	ret = wait_event_timeout(vv->wq, vv->got_control, 5 * HZ);
+	ret = wait_event_timeout(vvd->wq, vvd->got_control, 5 * HZ);
 	if (ret == 0) {
-		v4l2_err(&vv->v4l2_dev,
+		v4l2_err(&vvd->v4l2_dev,
 			 "timed out waiting for query profile\n");
 		ret = -EIO;
 		goto prf_err;
@@ -452,14 +443,11 @@ int virtio_video_parse_virtio_control(struct virtio_video_device *vvd)
 {
 	struct video_format *fmt;
 	struct video_control_format *c_fmt;
-	struct virtio_video *vv;
 	uint32_t virtio_format;
 	int ret;
 
 	if (!vvd)
 		return -EINVAL;
-
-	vv = vvd->vv;
 
 	list_for_each_entry(fmt, &vvd->output_fmt_list, formats_list_entry) {
 		virtio_format =
@@ -478,14 +466,14 @@ int virtio_video_parse_virtio_control(struct virtio_video_device *vvd)
 
 		ret = virtio_video_parse_control_profiles(vvd, c_fmt);
 		if (ret) {
-			v4l2_err(&vv->v4l2_dev,
+			v4l2_err(&vvd->v4l2_dev,
 				 "failed to parse control profile\n");
 			goto parse_ctrl_prf_err;
 		}
 
 		ret = virtio_video_parse_control_levels(vvd, c_fmt);
 		if (ret) {
-			v4l2_err(&vv->v4l2_dev,
+			v4l2_err(&vvd->v4l2_dev,
 				 "failed to parse control level\n");
 			goto parse_ctrl_lvl_err;
 		}

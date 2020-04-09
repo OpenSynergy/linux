@@ -129,19 +129,18 @@ int virtio_video_dec_init_queues(void *priv, struct vb2_queue *src_vq,
 	int ret;
 	struct virtio_video_stream *stream = priv;
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct virtio_video *vv = vvd->vv;
-	struct device *dev = vv->v4l2_dev.dev;
+	struct device *dev = vvd->v4l2_dev.dev;
 
 	src_vq->type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 	src_vq->io_modes = VB2_MMAP | VB2_DMABUF;
 	src_vq->drv_priv = stream;
 	src_vq->buf_struct_size = sizeof(struct virtio_video_buffer);
 	src_vq->ops = &virtio_video_dec_qops;
-	src_vq->mem_ops = virtio_video_mem_ops(vv);
+	src_vq->mem_ops = virtio_video_mem_ops(vvd);
 	src_vq->min_buffers_needed = stream->in_info.min_buffers;
 	src_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
 	src_vq->lock = &stream->vq_mutex;
-	src_vq->gfp_flags = virtio_video_gfp_flags(vv);
+	src_vq->gfp_flags = virtio_video_gfp_flags(vvd);
 	src_vq->dev = dev;
 
 	ret = vb2_queue_init(src_vq);
@@ -153,11 +152,11 @@ int virtio_video_dec_init_queues(void *priv, struct vb2_queue *src_vq,
 	dst_vq->drv_priv = stream;
 	dst_vq->buf_struct_size = sizeof(struct virtio_video_buffer);
 	dst_vq->ops = &virtio_video_dec_qops;
-	dst_vq->mem_ops = virtio_video_mem_ops(vv);
+	dst_vq->mem_ops = virtio_video_mem_ops(vvd);
 	dst_vq->min_buffers_needed = stream->out_info.min_buffers;
 	dst_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
 	dst_vq->lock = &stream->vq_mutex;
-	dst_vq->gfp_flags = virtio_video_gfp_flags(vv);
+	dst_vq->gfp_flags = virtio_video_gfp_flags(vvd);
 	dst_vq->dev = dev;
 
 	return vb2_queue_init(dst_vq);
@@ -168,7 +167,6 @@ static int virtio_video_try_decoder_cmd(struct file *file, void *fh,
 {
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = video_drvdata(file);
-	struct virtio_video *vv = vvd->vv;
 
 	if (stream->state == STREAM_STATE_ERROR)
 		return -EIO;
@@ -180,7 +178,7 @@ static int virtio_video_try_decoder_cmd(struct file *file, void *fh,
 	case V4L2_DEC_CMD_STOP:
 	case V4L2_DEC_CMD_START:
 		if (cmd->flags != 0) {
-			v4l2_err(&vv->v4l2_dev, "flags=%u are not supported",
+			v4l2_err(&vvd->v4l2_dev, "flags=%u are not supported",
 				 cmd->flags);
 			return -EINVAL;
 		}
@@ -199,7 +197,6 @@ static int virtio_video_decoder_cmd(struct file *file, void *fh,
 	struct vb2_queue *src_vq, *dst_vq;
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = video_drvdata(file);
-	struct virtio_video *vv = vvd->vv;
 
 	ret = virtio_video_try_decoder_cmd(file, fh, cmd);
 	if (ret < 0)
@@ -217,20 +214,20 @@ static int virtio_video_decoder_cmd(struct file *file, void *fh,
 					 V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
 
 		if (!vb2_is_streaming(src_vq)) {
-			v4l2_dbg(1, vv->debug,
-				 &vv->v4l2_dev, "output is not streaming\n");
+			v4l2_dbg(1, vvd->debug,
+				 &vvd->v4l2_dev, "output is not streaming\n");
 			return 0;
 		}
 
 		if (!vb2_is_streaming(dst_vq)) {
-			v4l2_dbg(1, vv->debug,
-				 &vv->v4l2_dev, "capture is not streaming\n");
+			v4l2_dbg(1, vvd->debug,
+				 &vvd->v4l2_dev, "capture is not streaming\n");
 			return 0;
 		}
 
-		ret = virtio_video_cmd_stream_drain(vv, stream->stream_id);
+		ret = virtio_video_cmd_stream_drain(vvd, stream->stream_id);
 		if (ret) {
-			v4l2_err(&vv->v4l2_dev, "failed to drain stream\n");
+			v4l2_err(&vvd->v4l2_dev, "failed to drain stream\n");
 			return ret;
 		}
 
@@ -341,7 +338,6 @@ static int virtio_video_dec_s_selection(struct file *file, void *fh,
 {
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct virtio_video *vv = vvd->vv;
 	int ret;
 
 	if (V4L2_TYPE_IS_OUTPUT(sel->type))
@@ -358,12 +354,12 @@ static int virtio_video_dec_s_selection(struct file *file, void *fh,
 		return -EINVAL;
 	}
 
-	ret = virtio_video_cmd_set_params(vv, stream,  &stream->out_info,
+	ret = virtio_video_cmd_set_params(vvd, stream,  &stream->out_info,
 					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
 	if (ret)
 		return -EINVAL;
 
-	return virtio_video_cmd_get_params(vv, stream,
+	return virtio_video_cmd_get_params(vvd, stream,
 					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
 }
 

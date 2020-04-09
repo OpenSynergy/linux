@@ -93,74 +93,10 @@ const struct dma_map_ops dma_phys_ops = {
 	.map_sg			= dma_phys_map_sg,
 };
 
-static int virtio_video_query_cap_resp_buf(struct virtio_video *vv, void
-					   **resp_buf, int queue_type)
-{
-	int ret = 0;
-	int resp_size = vv->max_caps_len;
-
-	*resp_buf = kzalloc(vv->max_caps_len, GFP_KERNEL);
-	if (IS_ERR(*resp_buf)) {
-		ret = PTR_ERR(*resp_buf);
-		goto query_cap_err;
-	}
-
-	vv->got_caps = false;
-	ret = virtio_video_query_capability(vv, *resp_buf, resp_size,
-					    queue_type);
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to query capability\n");
-		goto query_cap_err;
-	}
-
-	ret = wait_event_timeout(vv->wq, vv->got_caps, 5 * HZ);
-	if (ret == 0) {
-		v4l2_err(&vv->v4l2_dev, "timed out waiting for get caps\n");
-		ret = -EIO;
-		goto query_cap_err;
-	}
-
-	return 0;
-query_cap_err:
-	return ret;
-}
-
-static int virtio_video_init(struct virtio_video *vv)
-{
-	int ret = 0;
-	void *input_resp_buf, *output_resp_buf;
-
-	if (!vv)
-		return -EINVAL;
-
-	ret = virtio_video_query_cap_resp_buf(vv, &input_resp_buf,
-					      VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to get input caps\n");
-		goto init_err;
-	}
-
-	ret = virtio_video_query_cap_resp_buf(vv, &output_resp_buf,
-					      VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
-	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to get output caps\n");
-		goto init_err;
-	}
-
-	ret = virtio_video_device_init(vv, input_resp_buf, output_resp_buf);
-	if (ret)
-		v4l2_err(&vv->v4l2_dev, "failed to initialize devices\n");
-
-init_err:
-	kfree(input_resp_buf);
-	kfree(output_resp_buf);
-	return ret;
-};
-
 static int virtio_video_probe(struct virtio_device *vdev)
 {
 	int ret;
-	struct virtio_video *vv;
+	struct virtio_video_device *vvd;
 	struct virtqueue *vqs[2];
 	struct device *dev = &vdev->dev;
 
@@ -175,81 +111,79 @@ static int virtio_video_probe(struct virtio_device *vdev)
 		return -ENODEV;
 	}
 
-	vv = devm_kzalloc(dev, sizeof(*vv), GFP_KERNEL);
-	if (!vv)
+	vvd = devm_kzalloc(dev, sizeof(*vvd), GFP_KERNEL);
+	if (!vvd)
 		return -ENOMEM;
 
-	vv->vdev = vdev;
-	vv->debug = debug;
-	vv->use_dma_mem = use_dma_mem;
-	vdev->priv = vv;
+	vvd->vdev = vdev;
+	vvd->debug = debug;
+	vvd->use_dma_mem = use_dma_mem;
+	vdev->priv = vvd;
 
-	spin_lock_init(&vv->resource_idr_lock);
-	idr_init(&vv->resource_idr);
-	spin_lock_init(&vv->stream_idr_lock);
-	idr_init(&vv->stream_idr);
+	spin_lock_init(&vvd->resource_idr_lock);
+	idr_init(&vvd->resource_idr);
+	spin_lock_init(&vvd->stream_idr_lock);
+	idr_init(&vvd->stream_idr);
 
-	init_waitqueue_head(&vv->wq);
+	init_waitqueue_head(&vvd->wq);
 
 	if (virtio_has_feature(vdev, VIRTIO_VIDEO_F_RESOURCE_NON_CONTIG))
-		vv->supp_non_contig = true;
+		vvd->supp_non_contig = true;
 
-	vv->has_iommu = !virtio_has_iommu_quirk(vdev);
-	if (!vv->has_iommu)
+	vvd->has_iommu = !virtio_has_iommu_quirk(vdev);
+	if (!vvd->has_iommu)
 		set_dma_ops(dev, &dma_phys_ops);
 
 	dev_set_name(dev, "%s.%i", DRIVER_NAME, vdev->index);
-	ret = v4l2_device_register(dev, &vv->v4l2_dev);
+	ret = v4l2_device_register(dev, &vvd->v4l2_dev);
 	if (ret)
 		goto err_v4l2_reg;
 
-	virtio_video_init_vq(&vv->commandq, virtio_video_dequeue_cmd_func);
-	virtio_video_init_vq(&vv->eventq, virtio_video_dequeue_event_func);
+	virtio_video_init_vq(&vvd->commandq, virtio_video_dequeue_cmd_func);
+	virtio_video_init_vq(&vvd->eventq, virtio_video_dequeue_event_func);
 
 	ret = virtio_find_vqs(vdev, 2, vqs, callbacks, names, NULL);
 	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to find virt queues\n");
+		v4l2_err(&vvd->v4l2_dev, "failed to find virt queues\n");
 		goto err_vqs;
 	}
 
-	vv->commandq.vq = vqs[0];
-	vv->eventq.vq = vqs[1];
+	vvd->commandq.vq = vqs[0];
+	vvd->eventq.vq = vqs[1];
 
-	ret = virtio_video_alloc_vbufs(vv);
+	ret = virtio_video_alloc_vbufs(vvd);
 	if (ret) {
-		v4l2_err(&vv->v4l2_dev, "failed to alloc vbufs\n");
+		v4l2_err(&vvd->v4l2_dev, "failed to alloc vbufs\n");
 		goto err_vbufs;
 	}
 
 	virtio_cread(vdev, struct virtio_video_config, max_caps_length,
-		     &vv->max_caps_len);
-	if (!vv->max_caps_len) {
-		v4l2_err(&vv->v4l2_dev, "max_caps_len is zero\n");
+		     &vvd->max_caps_len);
+	if (!vvd->max_caps_len) {
+		v4l2_err(&vvd->v4l2_dev, "max_caps_len is zero\n");
 		ret = -EINVAL;
 		goto err_config;
 	}
 
 	virtio_cread(vdev, struct virtio_video_config, max_resp_length,
-		     &vv->max_resp_len);
-	if (!vv->max_resp_len) {
-		v4l2_err(&vv->v4l2_dev, "max_resp_len is zero\n");
+		     &vvd->max_resp_len);
+	if (!vvd->max_resp_len) {
+		v4l2_err(&vvd->v4l2_dev, "max_resp_len is zero\n");
 		ret = -EINVAL;
 		goto err_config;
 	}
 
-	ret = virtio_video_alloc_events(vv, vv->eventq.vq->num_free);
+	ret = virtio_video_alloc_events(vvd, vvd->eventq.vq->num_free);
 	if (ret)
 		goto err_events;
 
 	virtio_device_ready(vdev);
-	vv->vq_ready = true;
-	vv->got_caps = false;
+	vvd->vq_ready = true;
+	vvd->got_caps = false;
 
-	INIT_LIST_HEAD(&vv->devices_list);
-
-	ret = virtio_video_init(vv);
+	ret = virtio_video_device_init(vvd);
 	if (ret) {
-		v4l2_err(&vv->v4l2_dev,
+		v4l2_err(&vvd->v4l2_dev,
 			 "failed to init virtio video\n");
 		goto err_init;
 	}
@@ -259,26 +193,26 @@ static int virtio_video_probe(struct virtio_device *vdev)
 err_init:
 err_events:
 err_config:
-	virtio_video_free_vbufs(vv);
+	virtio_video_free_vbufs(vvd);
 err_vbufs:
 	vdev->config->del_vqs(vdev);
 err_vqs:
-	v4l2_device_unregister(&vv->v4l2_dev);
+	v4l2_device_unregister(&vvd->v4l2_dev);
 err_v4l2_reg:
-	devm_kfree(&vdev->dev, vv);
+	devm_kfree(&vdev->dev, vvd);
 
 	return ret;
 }
 
 static void virtio_video_remove(struct virtio_device *vdev)
 {
-	struct virtio_video *vv = vdev->priv;
+	struct virtio_video_device *vvd = vdev->priv;
 
-	virtio_video_device_deinit(vv);
-	virtio_video_free_vbufs(vv);
+	virtio_video_device_deinit(vvd);
+	virtio_video_free_vbufs(vvd);
 	vdev->config->del_vqs(vdev);
-	v4l2_device_unregister(&vv->v4l2_dev);
-	devm_kfree(&vdev->dev, vv);
+	v4l2_device_unregister(&vvd->v4l2_dev);
+	devm_kfree(&vdev->dev, vvd);
 }
 
 static struct virtio_device_id id_table[] = {
