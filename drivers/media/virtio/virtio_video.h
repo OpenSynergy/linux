@@ -116,11 +116,16 @@ struct virtio_video_vbuffer {
 	struct list_head list;
 };
 
-struct virtio_video_queue {
+struct virtio_video_cmd_queue {
 	struct virtqueue *vq;
 	spinlock_t qlock;
-	wait_queue_head_t ack_queue;
-	struct work_struct dequeue_work;
+	wait_queue_head_t reclaim_queue;
+};
+
+struct virtio_video_event_queue {
+	struct virtqueue *vq;
+	spinlock_t qlock;
+	struct work_struct reclaim_work;
 };
 
 enum video_stream_state {
@@ -154,8 +159,8 @@ struct virtio_video_stream {
 
 struct virtio_video_device {
 	struct virtio_device *vdev;
-	struct virtio_video_queue commandq;
-	struct virtio_video_queue eventq;
+	struct virtio_video_cmd_queue commandq;
+	struct virtio_video_event_queue eventq;
 	wait_queue_head_t wq;
 	bool vq_ready;
 
@@ -342,10 +347,10 @@ void virtio_video_queue_eos_event(struct virtio_video_stream *stream);
 void virtio_video_handle_error(struct virtio_video_stream *stream);
 int virtio_video_queue_release_buffers(struct virtio_video_stream *stream,
 				       int queue_type);
-void virtio_video_cmd_ack(struct virtqueue *vq);
-void virtio_video_event_ack(struct virtqueue *vq);
-void virtio_video_dequeue_cmd_func(struct work_struct *work);
-void virtio_video_dequeue_event_func(struct work_struct *work);
+void virtio_video_cmd_cb(struct virtqueue *vq);
+void virtio_video_event_cb(struct virtqueue *vq);
+void virtio_video_reclaim_events(struct work_struct *work);
+
 void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
 			   uint32_t flags, uint64_t timestamp, uint32_t size);
 int virtio_video_buf_plane_init(uint32_t idx, uint32_t resource_id,

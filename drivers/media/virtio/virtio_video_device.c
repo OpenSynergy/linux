@@ -815,16 +815,18 @@ static int virtio_video_device_release(struct file *file)
 	struct video_device *video_dev = video_devdata(file);
 	struct virtio_video_device *vvd = video_drvdata(file);
 
-	v4l2_fh_del(&stream->fh);
 	mutex_lock(video_dev->lock);
+
+	v4l2_fh_del(&stream->fh);
 	v4l2_m2m_ctx_release(stream->fh.m2m_ctx);
-	mutex_unlock(video_dev->lock);
 	v4l2_fh_exit(&stream->fh);
 
 	virtio_video_cmd_stream_destroy(vvd, stream->stream_id);
 	virtio_video_stream_id_put(vvd, stream->stream_id);
 
 	kfree(stream);
+
+	mutex_unlock(video_dev->lock);
 
 	return 0;
 }

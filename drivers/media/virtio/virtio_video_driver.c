@@ -30,14 +30,6 @@ static unsigned int use_dma_mem;
 module_param(use_dma_mem, uint, 0644);
 MODULE_PARM_DESC(use_dma_mem, "Try to allocate buffers from the DMA zone");
 
-static void virtio_video_init_vq(struct virtio_video_queue *vvq,
-				 void (*work_func)(struct work_struct *work))
-{
-	spin_lock_init(&vvq->qlock);
-	init_waitqueue_head(&vvq->ack_queue);
-	INIT_WORK(&vvq->dequeue_work, work_func);
-}
-
 static void *dma_phys_alloc(struct device *dev, size_t size,
 			    dma_addr_t *dma_handle, gfp_t gfp,
 			    unsigned long attrs)
@@ -100,10 +92,10 @@ static int virtio_video_probe(struct virtio_device *vdev)
 	struct virtqueue *vqs[2];
 	struct device *dev = &vdev->dev;
 
-	static const char * const names[] = { "control", "event" };
+	static const char * const names[] = { "commandq", "eventq" };
 	static vq_callback_t *callbacks[] = {
-		virtio_video_cmd_ack,
-		virtio_video_event_ack
+		virtio_video_cmd_cb,
+		virtio_video_event_cb
 	};
 
 	if (!virtio_has_feature(vdev, VIRTIO_VIDEO_F_RESOURCE_GUEST_PAGES)) {
@@ -139,8 +131,11 @@ static int virtio_video_probe(struct virtio_device *vdev)
 	if (ret)
 		goto err_v4l2_reg;
 
-	virtio_video_init_vq(&vvd->commandq, virtio_video_dequeue_cmd_func);
-	virtio_video_init_vq(&vvd->eventq, virtio_video_dequeue_event_func);
+	spin_lock_init(&vvd->commandq.qlock);
+	init_waitqueue_head(&vvd->commandq.reclaim_queue);
+
+	spin_lock_init(&vvd->eventq.qlock);
+	INIT_WORK(&vvd->eventq.reclaim_work, virtio_video_reclaim_events);
 
 	ret = virtio_find_vqs(vdev, 2, vqs, callbacks, names, NULL);
 	if (ret) {
