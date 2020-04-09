@@ -339,11 +339,15 @@ static void virtio_video_handle_event(struct virtio_video_device *vvd,
 	struct virtio_video_event *event =
 		(struct virtio_video_event *)vbuf->resp_buf;
 	uint32_t stream_id = event->stream_id;
+	struct video_device *vd = &vvd->video_dev;
+
+	mutex_lock(vd->lock);
 
 	stream = idr_find(&vvd->stream_idr, stream_id);
 	if (!stream) {
 		v4l2_warn(&vvd->v4l2_dev, "stream_id=%u not found for event\n",
 			  stream_id);
+		mutex_unlock(vd->lock);
 		return;
 	}
 
@@ -376,6 +380,8 @@ static void virtio_video_handle_event(struct virtio_video_device *vvd,
 			  stream_id);
 		break;
 	}
+
+	mutex_unlock(vd->lock);
 
 	memset(vbuf->resp_buf, 0, vbuf->resp_size);
 	ret = virtio_video_queue_event_buffer(vvd, vbuf);
