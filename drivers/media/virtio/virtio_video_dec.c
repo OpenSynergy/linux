@@ -96,7 +96,7 @@ int virtio_video_dec_init_ctrls(struct virtio_video_stream *stream)
 {
 	struct v4l2_ctrl *ctrl;
 
-	v4l2_ctrl_handler_init(&stream->ctrl_handler, 1);
+	v4l2_ctrl_handler_init(&stream->ctrl_handler, 2);
 
 	ctrl = v4l2_ctrl_new_std(&stream->ctrl_handler,
 				&virtio_video_dec_ctrl_ops,
@@ -106,6 +106,14 @@ int virtio_video_dec_init_ctrls(struct virtio_video_stream *stream)
 
 	if (ctrl)
 		ctrl->flags |= V4L2_CTRL_FLAG_VOLATILE;
+
+	if (stream->ctrl_handler.error)
+		return stream->ctrl_handler.error;
+
+	(void)v4l2_ctrl_new_std(&stream->ctrl_handler, NULL,
+				V4L2_CID_MIN_BUFFERS_FOR_OUTPUT,
+				MIN_BUFS_MIN, MIN_BUFS_MAX, MIN_BUFS_STEP,
+				stream->in_info.min_buffers);
 
 	if (stream->ctrl_handler.error)
 		return stream->ctrl_handler.error;
