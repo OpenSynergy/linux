@@ -174,7 +174,6 @@ static int virtio_video_probe(struct virtio_device *vdev)
 
 	virtio_device_ready(vdev);
 	vvd->vq_ready = true;
-	vvd->got_caps = false;
 
 	ret = virtio_video_device_init(vvd);
 	if (ret) {
