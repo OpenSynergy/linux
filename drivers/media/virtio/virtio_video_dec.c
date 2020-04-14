@@ -402,26 +402,23 @@ void *virtio_video_dec_get_fmt_list(struct virtio_video_device *vvd)
 	return &vvd->input_fmt_list;
 }
 
-int virtio_video_dec_init_device(struct video_device *vd)
+static struct virtio_video_device_ops virtio_video_dec_ops = {
+	.init_ctrls = virtio_video_dec_init_ctrls,
+	.init_queues = virtio_video_dec_init_queues,
+	.get_fmt_list = virtio_video_dec_get_fmt_list,
+};
+
+int virtio_video_dec_init(struct virtio_video_device *vvd)
 {
 	ssize_t num;
+	struct video_device *vd = &vvd->video_dev;
 
 	vd->ioctl_ops = &virtio_video_dec_ioctl_ops;
+	vvd->ops = &virtio_video_dec_ops;
+
 	num = strscpy(vd->name, "stateful-decoder", sizeof(vd->name));
 	if (num < 0)
 		return num;
 
 	return 0;
-}
-
-void virtio_video_dec_init_ops(struct virtio_video_device *vvd)
-{
-	static struct virtio_video_device_ops ops = {
-		.init_ctrls = virtio_video_dec_init_ctrls,
-		.init_queues = virtio_video_dec_init_queues,
-		.init_device = virtio_video_dec_init_device,
-		.get_fmt_list = virtio_video_dec_get_fmt_list,
-	};
-
-	vvd->ops = &ops;
 }

@@ -201,7 +201,6 @@ struct virtio_video_device_ops {
 	int (*init_ctrls)(struct virtio_video_stream *stream);
 	int (*init_queues)(void *priv, struct vb2_queue *src_vq,
 			   struct vb2_queue *dst_vq);
-	int (*init_device)(struct video_device *vd);
 	void* (*get_fmt_list)(struct virtio_video_device *vvd);
 };
 
@@ -283,6 +282,9 @@ int virtio_video_alloc_events(struct virtio_video_device *vvd, size_t num);
 
 int virtio_video_device_init(struct virtio_video_device *vvd);
 void virtio_video_device_deinit(struct virtio_video_device *vvd);
+
+int virtio_video_dec_init(struct virtio_video_device *vvd);
+int virtio_video_enc_init(struct virtio_video_device *vvd);
 
 void virtio_video_stream_id_get(struct virtio_video_device *vvd,
 				struct virtio_video_stream *stream,
@@ -414,6 +416,4 @@ int virtio_video_stream_get_params(struct virtio_video_device *vvd,
 int virtio_video_stream_get_controls(struct virtio_video_device *vvd,
 				     struct virtio_video_stream *stream);
 
-void virtio_video_dec_init_ops(struct virtio_video_device *vvd);
-void virtio_video_enc_init_ops(struct virtio_video_device *vvd);
 #endif /* _VIRTIO_VIDEO_H */
