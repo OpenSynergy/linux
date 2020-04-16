@@ -27,16 +27,12 @@ static int virtio_video_dec_start_streaming(struct vb2_queue *vq,
 {
 	struct virtio_video_stream *stream = vb2_get_drv_priv(vq);
 
-	spin_lock(&stream->state_lock);
-	if (stream->state == STREAM_STATE_ERROR) {
-		spin_unlock(&stream->state_lock);
+	if (virtio_video_state(stream) == STREAM_STATE_ERROR)
 		return -EIO;
-	}
 
 	if (!V4L2_TYPE_IS_OUTPUT(vq->type) &&
-	    stream->state >= STREAM_STATE_INIT)
-		stream->state = STREAM_STATE_RUNNING;
-	spin_unlock(&stream->state_lock);
+	    virtio_video_state(stream) >= STREAM_STATE_INIT)
+		virtio_video_state_update(stream, STREAM_STATE_RUNNING);
 
 	return 0;
 }
@@ -71,12 +67,13 @@ static int virtio_video_dec_g_ctrl(struct v4l2_ctrl *ctrl)
 	int ret = 0;
 	struct virtio_video_stream *stream = ctrl2stream(ctrl);
 
-	if (stream->state == STREAM_STATE_ERROR)
+	if (virtio_video_state(stream) == STREAM_STATE_ERROR)
 		return -EIO;
 
 	switch (ctrl->id) {
 	case V4L2_CID_MIN_BUFFERS_FOR_CAPTURE:
-		if (stream->state >= STREAM_STATE_DYNAMIC_RES_CHANGE)
+		if (virtio_video_state(stream) >=
+		    STREAM_STATE_DYNAMIC_RES_CHANGE)
 			ctrl->val = stream->out_info.min_buffers;
 		else
 			ctrl->val = 0;
@@ -168,10 +165,10 @@ static int virtio_video_try_decoder_cmd(struct file *file, void *fh,
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = video_drvdata(file);
 
-	if (stream->state == STREAM_STATE_ERROR)
+	if (virtio_video_state(stream) == STREAM_STATE_ERROR)
 		return -EIO;
 
-	if (stream->state == STREAM_STATE_DRAIN)
+	if (virtio_video_state(stream) == STREAM_STATE_DRAIN)
 		return -EBUSY;
 
 	switch (cmd->cmd) {
@@ -231,9 +228,7 @@ static int virtio_video_decoder_cmd(struct file *file, void *fh,
 			return ret;
 		}
 
-		spin_lock(&stream->state_lock);
-		stream->state = STREAM_STATE_DRAIN;
-		spin_unlock(&stream->state_lock);
+		virtio_video_state_update(stream, STREAM_STATE_DRAIN);
 		break;
 	default:
 		return -EINVAL;
@@ -252,7 +247,7 @@ static int virtio_video_dec_enum_fmt_vid_cap(struct file *file, void *fh,
 	unsigned long input_mask = 0;
 	int idx = 0, bit_num = 0;
 
-	if (stream->state == STREAM_STATE_ERROR)
+	if (virtio_video_state(stream) == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (f->type != V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
@@ -294,7 +289,7 @@ int virtio_video_dec_enum_fmt_vid_out(struct file *file, void *fh,
 	struct video_format *fmt;
 	int idx = 0;
 
-	if (stream->state == STREAM_STATE_ERROR)
+	if (virtio_video_state(stream) == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (f->type != V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE)
@@ -324,10 +319,8 @@ static int virtio_video_dec_s_fmt(struct file *file, void *fh,
 		return ret;
 
 	if (V4L2_TYPE_IS_OUTPUT(f->type)) {
-		spin_lock(&stream->state_lock);
-		if (stream->state == STREAM_STATE_IDLE)
-			stream->state = STREAM_STATE_INIT;
-		spin_unlock(&stream->state_lock);
+		if (virtio_video_state(stream) == STREAM_STATE_IDLE)
+			virtio_video_state_update(stream, STREAM_STATE_INIT);
 	}
 
 	return 0;

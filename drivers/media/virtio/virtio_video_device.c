@@ -23,6 +23,29 @@
 
 #include "virtio_video.h"
 
+enum video_stream_state virtio_video_state(struct virtio_video_stream *stream)
+{
+	return atomic_read(&stream->state);
+}
+
+void virtio_video_state_reset(struct virtio_video_stream *stream)
+{
+	atomic_set(&stream->state, STREAM_STATE_IDLE);
+}
+
+void virtio_video_state_update(struct virtio_video_stream *stream,
+			       enum video_stream_state new_state)
+{
+	enum video_stream_state prev_state;
+
+	do {
+	    prev_state = atomic_read(&stream->state);
+	    if (prev_state == STREAM_STATE_ERROR)
+		    return;
+	} while (atomic_cmpxchg(&stream->state, prev_state, new_state) !=
+		 prev_state);
+}
+
 int virtio_video_queue_setup(struct vb2_queue *vq, unsigned int *num_buffers,
 			     unsigned int *num_planes, unsigned int sizes[],
 			     struct device *alloc_devs[])
@@ -31,7 +54,7 @@ int virtio_video_queue_setup(struct vb2_queue *vq, unsigned int *num_buffers,
 	struct virtio_video_stream *stream = vb2_get_drv_priv(vq);
 	struct video_format_info *p_info;
 
-	if (stream->state == STREAM_STATE_ERROR)
+	if (virtio_video_state(stream) == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (*num_planes)
@@ -165,7 +188,7 @@ int virtio_video_qbuf(struct file *file, void *priv,
 {
 	struct virtio_video_stream *stream = file2stream(file);
 
-	if (stream->state == STREAM_STATE_ERROR)
+	if (virtio_video_state(stream) == STREAM_STATE_ERROR)
 		return -EIO;
 
 	return v4l2_m2m_ioctl_qbuf(file, priv, buf);
@@ -176,7 +199,7 @@ int virtio_video_dqbuf(struct file *file, void *priv,
 {
 	struct virtio_video_stream *stream = file2stream(file);
 
-	if (stream->state == STREAM_STATE_ERROR)
+	if (virtio_video_state(stream) == STREAM_STATE_ERROR)
 		return -EIO;
 
 	return v4l2_m2m_ioctl_dqbuf(file, priv, buf);
@@ -471,7 +494,7 @@ int virtio_video_try_fmt(struct virtio_video_stream *stream,
 	struct video_format_frame *frm;
 	struct virtio_video_format_frame *frame;
 
-	if (stream->state == STREAM_STATE_ERROR)
+	if (virtio_video_state(stream) == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (V4L2_TYPE_IS_OUTPUT(f->type))
@@ -669,10 +692,7 @@ void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
 
 	if (flags & VIRTIO_VIDEO_BUFFER_FLAG_EOS) {
 		v4l2_vb->flags |= V4L2_BUF_FLAG_LAST;
-		spin_lock(&stream->state_lock);
-		if (stream->state != STREAM_STATE_ERROR)
-			stream->state = STREAM_STATE_STOPPED;
-		spin_unlock(&stream->state_lock);
+		virtio_video_state_update(stream, STREAM_STATE_STOPPED);
 		virtio_video_queue_eos_event(stream);
 	}
 
@@ -736,7 +756,8 @@ static int virtio_video_device_open(struct file *file)
 
 	stream->video_dev = video_dev;
 	stream->stream_id = stream_id;
-	stream->state = STREAM_STATE_IDLE;
+
+	virtio_video_state_reset(stream);
 
 	ret = virtio_video_stream_get_params(vvd, stream);
 	if (ret)
@@ -749,7 +770,6 @@ static int virtio_video_device_open(struct file *file)
 			goto err_stream_create;
 	}
 
-	spin_lock_init(&stream->state_lock);
 	mutex_init(&stream->vq_mutex);
 	v4l2_fh_init(&stream->fh, video_dev);
 	stream->fh.ctrl_handler = &stream->ctrl_handler;

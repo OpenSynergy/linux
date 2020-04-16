@@ -143,8 +143,7 @@ enum video_stream_state {
 
 struct virtio_video_stream {
 	uint32_t stream_id;
-	enum video_stream_state state;
-	spinlock_t state_lock;
+	atomic_t state;
 	struct video_device *video_dev;
 	struct v4l2_fh fh;
 	struct mutex vq_mutex;
@@ -275,6 +274,11 @@ static inline bool needs_alignment(uint32_t val, uint32_t a)
 
 	return true;
 }
+
+enum video_stream_state virtio_video_state(struct virtio_video_stream *stream);
+void virtio_video_state_reset(struct virtio_video_stream *stream);
+void virtio_video_state_update(struct virtio_video_stream *stream,
+			       enum video_stream_state new_state);
 
 int virtio_video_alloc_vbufs(struct virtio_video_device *vvd);
 void virtio_video_free_vbufs(struct virtio_video_device *vvd);
