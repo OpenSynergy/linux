@@ -126,6 +126,7 @@ static int virtio_video_enc_g_ctrl(struct v4l2_ctrl *ctrl)
 		break;
 	default:
 		ret = -EINVAL;
+		break;
 	}
 
 	return ret;
