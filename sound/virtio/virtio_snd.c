@@ -140,6 +140,7 @@ struct viosnd_pcm_stream {
 	struct viosnd_pcm *pcm;
 
 	struct snd_pcm_hardware hw;
+	struct snd_pcm_hw_constraint_list rate_list;
 	struct snd_pcm_substream *substream;
 	u8 nchmaps;
 
@@ -851,6 +852,9 @@ static int viosnd_pcm_open(struct snd_pcm_substream *substream)
 
 	substream->runtime->hw = stream->hw;
 
+	snd_pcm_hw_constraint_list(substream->runtime, 0,
+		SNDRV_PCM_HW_PARAM_RATE, &stream->rate_list);
+
 	return 0;
 }
 
@@ -902,6 +906,7 @@ static int viosnd_pcm_hw_params(struct snd_pcm_substream *substream,
 		{ 11025, VIRTIO_SND_PCM_RATE_11025 },
 		{ 16000, VIRTIO_SND_PCM_RATE_16000 },
 		{ 22050, VIRTIO_SND_PCM_RATE_22050 },
+		{ 24000, VIRTIO_SND_PCM_RATE_24000 },
 		{ 32000, VIRTIO_SND_PCM_RATE_32000 },
 		{ 44100, VIRTIO_SND_PCM_RATE_44100 },
 		{ 48000, VIRTIO_SND_PCM_RATE_48000 },
@@ -1352,23 +1357,24 @@ viosnd_pcm_stream_configure(struct viosnd_pcm *pcm,
 
 	static const struct {
 		u32 vio_bit;
-		u64 alsa_bit;
 		unsigned int rate;
 	} ratemap[] = {
-		{ VIRTIO_SND_PCM_RATEBIT_8000, SNDRV_PCM_RATE_8000, 8000 },
-		{ VIRTIO_SND_PCM_RATEBIT_11025, SNDRV_PCM_RATE_11025, 11025 },
-		{ VIRTIO_SND_PCM_RATEBIT_16000, SNDRV_PCM_RATE_16000, 16000 },
-		{ VIRTIO_SND_PCM_RATEBIT_22050, SNDRV_PCM_RATE_22050, 22050 },
-		{ VIRTIO_SND_PCM_RATEBIT_32000, SNDRV_PCM_RATE_32000, 32000 },
-		{ VIRTIO_SND_PCM_RATEBIT_44100, SNDRV_PCM_RATE_44100, 44100 },
-		{ VIRTIO_SND_PCM_RATEBIT_48000, SNDRV_PCM_RATE_48000, 48000 },
-		{ VIRTIO_SND_PCM_RATEBIT_64000, SNDRV_PCM_RATE_64000, 64000 },
-		{ VIRTIO_SND_PCM_RATEBIT_88200, SNDRV_PCM_RATE_88200, 88200 },
-		{ VIRTIO_SND_PCM_RATEBIT_96000, SNDRV_PCM_RATE_96000, 96000 },
-		{ VIRTIO_SND_PCM_RATEBIT_176400, SNDRV_PCM_RATE_176400,
-		  176400 },
-		{ VIRTIO_SND_PCM_RATEBIT_192000, SNDRV_PCM_RATE_192000, 192000 }
+		{ VIRTIO_SND_PCM_RATEBIT_8000, 8000 },
+		{ VIRTIO_SND_PCM_RATEBIT_11025, 11025 },
+		{ VIRTIO_SND_PCM_RATEBIT_16000, 16000 },
+		{ VIRTIO_SND_PCM_RATEBIT_22050, 22050 },
+		{ VIRTIO_SND_PCM_RATEBIT_24000, 24000 },
+		{ VIRTIO_SND_PCM_RATEBIT_32000, 32000 },
+		{ VIRTIO_SND_PCM_RATEBIT_44100, 44100 },
+		{ VIRTIO_SND_PCM_RATEBIT_48000, 48000 },
+		{ VIRTIO_SND_PCM_RATEBIT_64000, 64000 },
+		{ VIRTIO_SND_PCM_RATEBIT_88200, 88200 },
+		{ VIRTIO_SND_PCM_RATEBIT_96000, 96000 },
+		{ VIRTIO_SND_PCM_RATEBIT_176400, 176400 },
+		{ VIRTIO_SND_PCM_RATEBIT_192000, 192000 }
 	};
+	unsigned int* vio_rate_list = NULL;
+	unsigned int vio_rate_count = 0;
 
 	struct device *dev = &pcm->ctx->vdev->dev;
 	struct viosnd_pcm_stream *stream;
@@ -1383,6 +1389,10 @@ viosnd_pcm_stream_configure(struct viosnd_pcm *pcm,
 
 	stream = devm_kzalloc(dev, sizeof(*stream), GFP_KERNEL);
 	if (!stream)
+		return ERR_PTR(-ENOMEM);
+
+	vio_rate_list = devm_kzalloc(dev, (sizeof(unsigned int) * ARRAY_SIZE(ratemap)), GFP_KERNEL);
+	if (!vio_rate_list)
 		return ERR_PTR(-ENOMEM);
 
 	stream->pcm = pcm;
@@ -1430,7 +1440,10 @@ viosnd_pcm_stream_configure(struct viosnd_pcm *pcm,
 			if (stream->hw.rate_max < ratemap[i].rate)
 				stream->hw.rate_max = ratemap[i].rate;
 
-			stream->hw.rates |= ratemap[i].alsa_bit;
+			stream->hw.rates = SNDRV_PCM_RATE_KNOT;
+
+			vio_rate_list[vio_rate_count] = ratemap[i].rate;
+			vio_rate_count++;
 		}
 	}
 
@@ -1445,6 +1458,9 @@ viosnd_pcm_stream_configure(struct viosnd_pcm *pcm,
 	buffer_size_max =
 		(sample_size_max * desc->channels_max * stream->hw.rate_max);
 	buffer_size_max /= 2;
+
+	stream->rate_list.list = vio_rate_list;
+	stream->rate_list.count = vio_rate_count;
 
 	stream->hw.channels_min = desc->channels_min;
 	stream->hw.channels_max = desc->channels_max;
