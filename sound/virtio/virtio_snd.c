@@ -28,6 +28,9 @@
 #include <linux/virtio.h>
 #include <linux/virtio_config.h>
 #include <linux/virtio_snd.h>
+#include <linux/dma-buf.h>
+#include <linux/ion_kernel.h>
+#include <linux/msm_ion.h>
 
 #include <sound/core.h>
 #include <sound/initval.h>
@@ -143,6 +146,7 @@ struct viosnd_pcm_stream {
 	struct snd_pcm_substream *substream;
 	u8 nchmaps;
 
+	struct dma_buf *dmabuf;
 	u8 *data;
 	snd_pcm_uframes_t period_position;
 	snd_pcm_uframes_t xfer_idle_size;
@@ -867,6 +871,69 @@ static int viosnd_pcm_close(struct snd_pcm_substream *substream)
 	return 0;
 }
 
+static int viosnd_pcm_mmap_fd(struct snd_pcm_substream *substream,
+			      struct snd_pcm_ion_mmap_fd *mmap_fd)
+{
+	struct viosnd_pcm_stream *stream = viosnd_pcm_substream_ctx(substream);
+	struct dma_buf *buf = NULL;
+
+	if (!substream->runtime) {
+		pr_err("%s substream runtime not found\n", __func__);
+		return -EFAULT;
+	}
+	/*
+	 * Passing O_CLOEXEC as flag passed to fd, to be in sync with
+	 * previous implimentation.
+	 * This was the flag used by previous internal wrapper API, which
+	 * used to call dma_buf_fd internally.
+	 */
+	mmap_fd->fd = dma_buf_fd(stream->dmabuf, O_CLOEXEC);
+	if (mmap_fd->fd < 0) {
+		pr_err("%s: dma_buf_fd failed, fd:%d\n",
+		       __func__, mmap_fd->fd);
+		return mmap_fd->fd;
+	}
+	mmap_fd->dir = substream->stream;
+	mmap_fd->actual_size = stream->dmabuf->size;
+	mmap_fd->size = stream->dmabuf->size;
+
+	buf = dma_buf_get(mmap_fd->fd);
+	if (IS_ERR_OR_NULL(buf)) {
+		pr_err("%s: dma_buf_get failed, fd:%d\n",
+		       __func__, mmap_fd->fd);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int viosnd_pcm_ioctl(struct snd_pcm_substream *substream,
+			    unsigned int cmd, void *arg)
+{
+	struct snd_pcm_ion_mmap_fd __user *_mmap_fd = NULL;
+	struct snd_pcm_ion_mmap_fd mmap_fd;
+
+	switch (cmd) {
+	case SNDRV_PCM_IOCTL_ION_MMAP_FD:
+		if (viosnd_pcm_mmap_fd(substream, &mmap_fd) < 0) {
+			pr_err("%s: error getting fd\n",
+			       __func__);
+			return -EFAULT;
+		}
+
+		_mmap_fd = (struct snd_pcm_ion_mmap_fd __user *)arg;
+		if (put_user(mmap_fd.fd, &_mmap_fd->fd) ||
+		    put_user(mmap_fd.size, &_mmap_fd->size) ||
+		    put_user(mmap_fd.actual_size, &_mmap_fd->actual_size)) {
+			pr_err("%s: error copying fd\n", __func__);
+			return -EFAULT;
+		}
+		return 0;
+	}
+
+	return snd_pcm_lib_ioctl(substream, cmd, arg);
+}
+
 static int viosnd_pcm_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *hw_params)
 {
@@ -1185,7 +1252,8 @@ static int viosnd_pcm_mmap(struct snd_pcm_substream *substream,
 static const struct snd_pcm_ops viosnd_pcm_ops = {
 	.open = viosnd_pcm_open,
 	.close = viosnd_pcm_close,
-	.ioctl = snd_pcm_lib_ioctl,
+	.ioctl = viosnd_pcm_ioctl,
+	.compat_ioctl = viosnd_pcm_ioctl,
 	.hw_params = viosnd_pcm_hw_params,
 	.hw_free = viosnd_pcm_hw_free,
 	.prepare = viosnd_pcm_prepare,
@@ -1322,6 +1390,67 @@ on_failure:
 	return code;
 }
 
+static void *viosnd_ion_alloc(const struct viosnd_pcm *pcm, const size_t len,
+			      struct dma_buf ** const pdmabuf)
+{
+	void *vaddr = NULL;
+	void *vmapaddr = NULL;
+	struct dma_buf *dmabuf;
+
+	dmabuf = ion_alloc(len, ION_HEAP(ION_SYSTEM_HEAP_ID), 0);
+
+	if (IS_ERR_OR_NULL(dmabuf)) {
+		dev_err(&pcm->ctx->vdev->dev,
+			"Allocating ION audio buffer failed with %d",
+			PTR_ERR(dmabuf));
+		return NULL;
+	}
+
+	/*
+	 * ion_alloc() returns the pointer of dma_buf structure but virtual
+	 * sound driver requires physical address of the allocated region to.
+	 * export the address to host OS.
+	 * As, there is no direct API to get the physical address of ION
+	 * allocated memory region without dma buffer attachment, use the
+	 * DMA virtual mapping API dma_buf_vamp() to map the buffer in virtual
+	 * memory(similar to vmalloc) and extract the physical address from
+	 * virtual address.
+	 *
+	 * We are not used the virtual mapping region because it adds the back
+	 * ground noise in the audio(may be because of page swapping).
+	 * For Example, below statements add the noise in audio.
+	 *
+	 *		vaddr  = dma_buf_vmap(dmabuf);
+	 *              return vaddr;
+	 *
+	 * Instead of that, use directly physical memory region via page virtual
+	 * address (similar to get_free_pages()).
+	 */
+
+	vmapaddr = dma_buf_vmap(dmabuf);
+	if (!vmapaddr) {
+		dev_err(&pcm->ctx->vdev->dev,
+			"%s: kernel virtual mapping of dma_buf failed\n",
+			__func__);
+		return NULL;
+	}
+
+	/*
+	 * retrieve the page virtual address from virtual memory region address.
+	 */
+	vaddr = phys_to_virt(PFN_PHYS(vmalloc_to_pfn(vmapaddr)));
+
+	/*
+	 * As, we are using page virtual address, virtual region is not
+	 * required. unmap the region.
+	 */
+	dma_buf_vunmap(dmabuf, vmapaddr);
+
+	*pdmabuf = dmabuf;
+
+	return vaddr;
+}
+
 static struct viosnd_pcm_stream *
 viosnd_pcm_stream_configure(struct viosnd_pcm *pcm,
 			    struct virtio_snd_pcm_stream_desc *desc)
@@ -1454,9 +1583,23 @@ viosnd_pcm_stream_configure(struct viosnd_pcm *pcm,
 	stream->hw.period_bytes_min = buffer_size_min / 4;
 	stream->hw.period_bytes_max = buffer_size_max / 4;
 
+
+	/*
+	 * page_order required in case of ion allocation failed and to
+	 * allocate the stream->shadow.data buffer.
+	 */
 	page_order = get_order(buffer_size_max);
 
-	stream->data = (void *)devm_get_free_pages(dev, GFP_KERNEL, page_order);
+	stream->data = viosnd_ion_alloc(pcm, buffer_size_max,
+					&stream->dmabuf);
+
+	if (!stream->data) {
+		dev_err(dev,
+			"Ion memory allocation failed,try with legacy method");
+		stream->data = (void *)devm_get_free_pages(dev, GFP_KERNEL,
+							   page_order);
+	}
+
 	if (!stream->data)
 		return ERR_PTR(-ENOMEM);
 

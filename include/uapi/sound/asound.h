@@ -343,6 +343,13 @@ struct snd_pcm_info {
 	unsigned char reserved[64];	/* reserved for future... */
 };
 
+struct snd_pcm_ion_mmap_fd {
+	int32_t dir;
+	int32_t fd;
+	int32_t size;
+	int32_t actual_size;
+};
+
 typedef int snd_pcm_hw_param_t;
 #define	SNDRV_PCM_HW_PARAM_ACCESS	0	/* Access type */
 #define	SNDRV_PCM_HW_PARAM_FORMAT	1	/* Format */
@@ -577,6 +584,7 @@ enum {
 #define SNDRV_PCM_IOCTL_TSTAMP		_IOW('A', 0x02, int)
 #define SNDRV_PCM_IOCTL_TTSTAMP		_IOW('A', 0x03, int)
 #define SNDRV_PCM_IOCTL_USER_PVERSION	_IOW('A', 0x04, int)
+#define SNDRV_PCM_IOCTL_ION_MMAP_FD	_IOWR('U', 0xd2, struct snd_pcm_ion_mmap_fd)
 #define SNDRV_PCM_IOCTL_HW_REFINE	_IOWR('A', 0x10, struct snd_pcm_hw_params)
 #define SNDRV_PCM_IOCTL_HW_PARAMS	_IOWR('A', 0x11, struct snd_pcm_hw_params)
 #define SNDRV_PCM_IOCTL_HW_FREE		_IO('A', 0x12)
