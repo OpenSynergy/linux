@@ -16,7 +16,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
-
 #include <linux/module.h>
 #include <linux/version.h>
 #include <linux/dma-mapping.h>
@@ -30,67 +29,13 @@ static unsigned int use_dma_mem;
 module_param(use_dma_mem, uint, 0644);
 MODULE_PARM_DESC(use_dma_mem, "Try to allocate buffers from the DMA zone");
 
-static void *dma_phys_alloc(struct device *dev, size_t size,
-			    dma_addr_t *dma_handle, gfp_t gfp,
-			    unsigned long attrs)
-{
-	void *ret;
-
-	ret = (void *)__get_free_pages(gfp, get_order(size));
-	if (ret)
-		*dma_handle = virt_to_phys(ret) - PFN_PHYS(dev->dma_pfn_offset);
-
-	return ret;
-}
-
-static void dma_phys_free(struct device *dev, size_t size,
-			  void *cpu_addr, dma_addr_t dma_addr,
-			  unsigned long attrs)
-{
-	free_pages((unsigned long)cpu_addr, get_order(size));
-}
-
-static dma_addr_t dma_phys_map_page(struct device *dev, struct page *page,
-				    unsigned long offset, size_t size,
-				    enum dma_data_direction dir,
-				    unsigned long attrs)
-{
-	return page_to_phys(page) + offset - PFN_PHYS(dev->dma_pfn_offset);
-}
-
-static int dma_phys_map_sg(struct device *dev, struct scatterlist *sgl,
-			   int nents, enum dma_data_direction dir,
-			   unsigned long attrs)
-{
-	int i;
-	struct scatterlist *sg;
-
-	for_each_sg(sgl, sg, nents, i) {
-		dma_addr_t offset = PFN_PHYS(dev->dma_pfn_offset);
-		void *va;
-
-		BUG_ON(!sg_page(sg));
-		va = sg_virt(sg);
-		sg_dma_address(sg) = (dma_addr_t)virt_to_phys(va) - offset;
-		sg_dma_len(sg) = sg->length;
-	}
-
-	return nents;
-}
-
-const struct dma_map_ops dma_phys_ops = {
-	.alloc			= dma_phys_alloc,
-	.free			= dma_phys_free,
-	.map_page		= dma_phys_map_page,
-	.map_sg			= dma_phys_map_sg,
-};
-
 static int virtio_video_probe(struct virtio_device *vdev)
 {
 	int ret;
 	struct virtio_video_device *vvd;
 	struct virtqueue *vqs[2];
 	struct device *dev = &vdev->dev;
+	struct device *pdev = dev->parent;
 
 	static const char * const names[] = { "commandq", "eventq" };
 	static vq_callback_t *callbacks[] = {
@@ -123,8 +68,18 @@ static int virtio_video_probe(struct virtio_device *vdev)
 		vvd->supp_non_contig = true;
 
 	vvd->has_iommu = !virtio_has_iommu_quirk(vdev);
-	if (!vvd->has_iommu)
-		set_dma_ops(dev, &dma_phys_ops);
+
+	if (!dev->dma_ops)
+		set_dma_ops(dev, pdev->dma_ops);
+
+	/*
+	 * Set it to coherent_dma_mask by default if the architecture
+	 * code has not set it.
+	 */
+	if (!dev->dma_mask)
+		dev->dma_mask = &dev->coherent_dma_mask;
+
+	dma_set_mask(dev, *pdev->dma_mask);
 
 	dev_set_name(dev, "%s.%i", DRIVER_NAME, vdev->index);
 	ret = v4l2_device_register(dev, &vvd->v4l2_dev);
