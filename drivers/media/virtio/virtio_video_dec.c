@@ -195,6 +195,12 @@ static int virtio_video_decoder_cmd(struct file *file, void *fh,
 	switch (cmd->cmd) {
 	case V4L2_DEC_CMD_START:
 		vb2_clear_last_buffer_dequeued(dst_vq);
+		if (virtio_video_state(stream) == STREAM_STATE_STOPPED) {
+			virtio_video_state_update(stream, STREAM_STATE_RUNNING);
+		} else {
+			v4l2_warn(&vvd->v4l2_dev, "state(%d) is not STOPPED\n",
+				  virtio_video_state(stream));
+		}
 		break;
 	case V4L2_DEC_CMD_STOP:
 		src_vq = v4l2_m2m_get_vq(stream->fh.m2m_ctx,
