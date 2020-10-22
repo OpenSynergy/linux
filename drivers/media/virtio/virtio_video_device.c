@@ -877,6 +877,7 @@ static int virtio_video_device_release(struct file *file)
 	virtio_video_cmd_stream_destroy(vvd, stream->stream_id);
 	virtio_video_stream_id_put(vvd, stream->stream_id);
 
+	v4l2_ctrl_handler_free(&stream->ctrl_handler);
 	kfree(stream);
 
 	mutex_unlock(video_dev->lock);
