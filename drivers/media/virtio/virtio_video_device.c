@@ -682,10 +682,20 @@ void virtio_video_queue_res_chg_event(struct virtio_video_stream *stream)
 
 void virtio_video_handle_error(struct virtio_video_stream *stream)
 {
+	struct vb2_queue *src_vq;
+	struct vb2_queue *dst_vq;
+
 	virtio_video_queue_release_buffers
 		(stream, VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
 	virtio_video_queue_release_buffers
 		(stream, VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
+
+	src_vq = v4l2_m2m_get_vq(stream->fh.m2m_ctx,
+				 V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
+	dst_vq = v4l2_m2m_get_vq(stream->fh.m2m_ctx,
+				 V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
+	vb2_queue_error(src_vq);
+	vb2_queue_error(dst_vq);
 }
 
 int virtio_video_queue_release_buffers(struct virtio_video_stream *stream,

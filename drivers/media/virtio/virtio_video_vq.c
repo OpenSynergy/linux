@@ -348,7 +348,8 @@ static void virtio_video_handle_event(struct virtio_video_device *vvd,
 				      struct virtio_video_event *evt)
 {
 	struct virtio_video_stream *stream;
-	uint32_t stream_id = evt->stream_id;
+	uint32_t stream_id = le32_to_cpu(evt->stream_id);
+	uint32_t event_type = le32_to_cpu(evt->event_type);
 	struct video_device *vd = &vvd->video_dev;
 
 	mutex_lock(vd->lock);
@@ -361,7 +362,7 @@ static void virtio_video_handle_event(struct virtio_video_device *vvd,
 		return;
 	}
 
-	switch (le32_to_cpu(evt->event_type)) {
+	switch (event_type) {
 	case VIRTIO_VIDEO_EVENT_DECODER_RESOLUTION_CHANGED:
 		v4l2_dbg(1, vvd->debug, &vvd->v4l2_dev,
 			 "stream_id=%u: resolution change event\n", stream_id);
@@ -381,8 +382,8 @@ static void virtio_video_handle_event(struct virtio_video_device *vvd,
 		virtio_video_handle_error(stream);
 		break;
 	default:
-		v4l2_warn(&vvd->v4l2_dev, "stream_id=%i: unknown event\n",
-			  stream_id);
+		v4l2_warn(&vvd->v4l2_dev, "stream_id=%i: unknown event %i\n",
+			  stream_id, event_type);
 		break;
 	}
 
