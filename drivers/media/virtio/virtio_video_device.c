@@ -474,6 +474,14 @@ int virtio_video_g_selection(struct file *file, void *fh,
 		sel->r.width = info->frame_width;
 		sel->r.height = info->frame_height;
 		break;
+	case V4L2_SEL_TGT_CROP_BOUNDS:
+	case V4L2_SEL_TGT_CROP_DEFAULT:
+	case V4L2_SEL_TGT_CROP:
+		sel->r.top = info->crop.top;
+		sel->r.left = info->crop.left;
+		sel->r.width = info->frame_width;
+		sel->r.height = info->frame_height;
+		break;
 	default:
 		v4l2_dbg(1, vvd->debug, &vvd->v4l2_dev,
 			 "unsupported/invalid selection target: %d\n",
