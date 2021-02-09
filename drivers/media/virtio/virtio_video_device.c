@@ -819,6 +819,7 @@ static int virtio_video_device_open(struct file *file)
 
 	stream->video_dev = video_dev;
 	stream->stream_id = stream_id;
+	mutex_init(&stream->event_mutex);
 
 	virtio_video_state_reset(stream);
 
@@ -866,7 +867,7 @@ err_init_ctrls:
 err_init_ctx:
 	v4l2_fh_exit(&stream->fh);
 err_stream_create:
-	virtio_video_stream_id_put(vvd, stream_id);
+	virtio_video_stream_id_put(vvd, stream);
 	kfree(stream);
 
 	return ret;
@@ -880,12 +881,13 @@ static int virtio_video_device_release(struct file *file)
 
 	mutex_lock(video_dev->lock);
 
+	virtio_video_stream_id_put(vvd, stream);
+
 	v4l2_fh_del(&stream->fh);
 	v4l2_m2m_ctx_release(stream->fh.m2m_ctx);
 	v4l2_fh_exit(&stream->fh);
 
 	virtio_video_cmd_stream_destroy(vvd, stream->stream_id);
-	virtio_video_stream_id_put(vvd, stream->stream_id);
 
 	v4l2_ctrl_handler_free(&stream->ctrl_handler);
 	kfree(stream);

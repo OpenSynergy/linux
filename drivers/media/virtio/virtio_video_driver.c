@@ -85,7 +85,7 @@ static int virtio_video_probe(struct virtio_device *vdev)
 
 	spin_lock_init(&vvd->resource_idr_lock);
 	idr_init(&vvd->resource_idr);
-	spin_lock_init(&vvd->stream_idr_lock);
+	mutex_init(&vvd->stream_idr_lock);
 	idr_init(&vvd->stream_idr);
 
 	init_waitqueue_head(&vvd->wq);
