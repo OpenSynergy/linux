@@ -825,13 +825,13 @@ static int virtio_video_device_open(struct file *file)
 
 	ret = virtio_video_stream_get_params(vvd, stream);
 	if (ret)
-		goto err_stream_create;
+		goto err_stream_get_params;
 
 	if (format >= VIRTIO_VIDEO_FORMAT_CODED_MIN &&
 	    format <= VIRTIO_VIDEO_FORMAT_CODED_MAX) {
 		ret = virtio_video_stream_get_controls(vvd, stream);
 		if (ret)
-			goto err_stream_create;
+			goto err_stream_get_params;
 	}
 
 	mutex_init(&stream->vq_mutex);
@@ -866,6 +866,8 @@ err_init_ctrls:
 	mutex_unlock(video_dev->lock);
 err_init_ctx:
 	v4l2_fh_exit(&stream->fh);
+err_stream_get_params:
+	virtio_video_cmd_stream_destroy(vvd, stream->stream_id);
 err_stream_create:
 	virtio_video_stream_id_put(vvd, stream);
 	kfree(stream);
