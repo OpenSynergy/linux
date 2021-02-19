@@ -390,8 +390,8 @@ int virtio_video_subscribe_event(struct v4l2_fh *fh,
 				 const struct v4l2_event_subscription *sub);
 
 void virtio_video_free_caps_list(struct list_head *caps_list);
-int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
-					  void *input_buf, void *output_buf);
+int virtio_video_parse_virtio_capabilities(struct virtio_video_device *vvd,
+					   void *input_buf, void *output_buf);
 void virtio_video_clean_capability(struct virtio_video_device *vvd);
 int virtio_video_parse_virtio_control(struct virtio_video_device *vvd);
 void virtio_video_clean_control(struct virtio_video_device *vvd);

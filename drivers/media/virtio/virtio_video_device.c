@@ -972,8 +972,8 @@ int virtio_video_device_init(struct virtio_video_device *vvd)
 		break;
 	}
 
-	ret = virtio_video_parse_virtio_capability(vvd, input_resp_buf,
-						   output_resp_buf);
+	ret = virtio_video_parse_virtio_capabilities(vvd, input_resp_buf,
+						     output_resp_buf);
 	if (ret) {
 		v4l2_err(&vvd->v4l2_dev, "failed to parse a function\n");
 		goto parse_cap_err;
