@@ -29,6 +29,14 @@ static unsigned int use_dma_mem;
 module_param(use_dma_mem, uint, 0644);
 MODULE_PARM_DESC(use_dma_mem, "Try to allocate buffers from the DMA zone");
 
+static int vid_nr_dec = -1;
+module_param(vid_nr_dec, int, 0644);
+MODULE_PARM_DESC(vid_nr_dec, "Decoder videoN start number, -1 is autodetect");
+
+static int vid_nr_enc = -1;
+module_param(vid_nr_enc, int, 0644);
+MODULE_PARM_DESC(vid_nr_enc, "Encoder videoN start number, -1 is autodetect");
+
 static int virtio_video_probe(struct virtio_device *vdev)
 {
 	int ret;
@@ -51,6 +59,18 @@ static int virtio_video_probe(struct virtio_device *vdev)
 	vvd = devm_kzalloc(dev, sizeof(*vvd), GFP_KERNEL);
 	if (!vvd)
 		return -ENOMEM;
+
+	switch (vdev->id.device) {
+	case VIRTIO_ID_VIDEO_ENCODER:
+		vvd->vid_dev_nr = vid_nr_enc;
+		vvd->type = VIRTIO_VIDEO_DEVICE_ENCODER;
+		break;
+	case VIRTIO_ID_VIDEO_DECODER:
+	default:
+		vvd->vid_dev_nr = vid_nr_dec;
+		vvd->type = VIRTIO_VIDEO_DEVICE_DECODER;
+		break;
+	}
 
 	vvd->vdev = vdev;
 	vvd->debug = debug;

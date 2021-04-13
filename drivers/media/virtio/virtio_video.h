@@ -183,6 +183,9 @@ struct virtio_video_device {
 
 	struct v4l2_m2m_dev *m2m_dev;
 
+	/* vid_dev_nr - try register starting at video device number */
+	int vid_dev_nr;
+
 	/* VIRTIO_VIDEO_FUNC_ */
 	uint32_t type;
 

@@ -874,7 +874,7 @@ static int virtio_video_device_register(struct virtio_video_device *vvd)
 
 	vd = &vvd->video_dev;
 
-	ret = video_register_device(vd, VFL_TYPE_GRABBER, -1);
+	ret = video_register_device(vd, VFL_TYPE_GRABBER, vvd->vid_dev_nr);
 	if (ret) {
 		v4l2_err(&vvd->v4l2_dev, "failed to register video device\n");
 		return ret;
@@ -969,14 +969,12 @@ int virtio_video_device_init(struct virtio_video_device *vvd)
 	vvd->num_output_fmts = 0;
 	vvd->num_input_fmts = 0;
 
-	switch (vvd->vdev->id.device) {
-	case VIRTIO_ID_VIDEO_ENCODER:
-		vvd->type = VIRTIO_VIDEO_DEVICE_ENCODER;
+	switch (vvd->type) {
+	case VIRTIO_VIDEO_DEVICE_ENCODER:
 		virtio_video_enc_init(vvd);
 		break;
-	case VIRTIO_ID_VIDEO_DECODER:
+	case VIRTIO_VIDEO_DEVICE_DECODER:
 	default:
-		vvd->type = VIRTIO_VIDEO_DEVICE_DECODER;
 		virtio_video_dec_init(vvd);
 		break;
 	}
