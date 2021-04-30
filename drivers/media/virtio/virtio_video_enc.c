@@ -271,9 +271,11 @@ static int virtio_video_encoder_cmd(struct file *file, void *fh,
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = video_drvdata(file);
 
+	mutex_lock(&stream->event_mutex);
+
 	ret = virtio_video_try_encoder_cmd(file, fh, cmd);
 	if (ret < 0)
-		return ret;
+		goto unlock;
 
 	dst_vq = v4l2_m2m_get_vq(stream->fh.m2m_ctx,
 				 V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE);
@@ -290,28 +292,33 @@ static int virtio_video_encoder_cmd(struct file *file, void *fh,
 		if (!vb2_is_streaming(src_vq)) {
 			v4l2_dbg(1, vvd->debug,
 				 &vvd->v4l2_dev, "output is not streaming\n");
-			return 0;
+			ret = 0;
+			goto unlock;
 		}
 
 		if (!vb2_is_streaming(dst_vq)) {
 			v4l2_dbg(1, vvd->debug,
 				 &vvd->v4l2_dev, "capture is not streaming\n");
-			return 0;
+			ret = 0;
+			goto unlock;
 		}
 
 		ret = virtio_video_cmd_stream_drain(vvd, stream->stream_id);
 		if (ret) {
 			v4l2_err(&vvd->v4l2_dev, "failed to drain stream\n");
-			return ret;
+			goto unlock;
 		}
 
 		virtio_video_state_update(stream, STREAM_STATE_DRAIN);
 		break;
 	default:
-		return -EINVAL;
+		ret = -EINVAL;
+		goto unlock;
 	}
 
-	return 0;
+unlock:
+	mutex_unlock(&stream->event_mutex);
+	return ret;
 }
 
 static int virtio_video_enc_enum_fmt_vid_cap(struct file *file, void *fh,
