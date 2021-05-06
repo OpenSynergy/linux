@@ -429,8 +429,8 @@ static int virtio_video_enc_try_framerate(struct virtio_video_stream *stream,
 static void virtio_video_timeperframe_from_info(struct video_format_info *info,
 						struct v4l2_fract *timeperframe)
 {
-	timeperframe->numerator = info->frame_rate;
-	timeperframe->denominator = 1;
+	timeperframe->numerator = 1;
+	timeperframe->denominator = info->frame_rate;
 }
 
 static int virtio_video_enc_g_parm(struct file *file, void *priv,
