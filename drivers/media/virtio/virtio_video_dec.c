@@ -360,11 +360,12 @@ static int virtio_video_dec_s_selection(struct file *file, void *fh,
 static const struct v4l2_ioctl_ops virtio_video_dec_ioctl_ops = {
 	.vidioc_querycap	= virtio_video_querycap,
 
-	.vidioc_enum_fmt_vid_cap_mplane = virtio_video_dec_enum_fmt_vid_cap,
+	.vidioc_enum_fmt_vid_cap        = virtio_video_dec_enum_fmt_vid_cap,
+	.vidioc_enum_fmt_vid_out        = virtio_video_dec_enum_fmt_vid_out,
+
 	.vidioc_g_fmt_vid_cap_mplane	= virtio_video_g_fmt,
 	.vidioc_s_fmt_vid_cap_mplane	= virtio_video_dec_s_fmt,
 
-	.vidioc_enum_fmt_vid_out_mplane = virtio_video_dec_enum_fmt_vid_out,
 	.vidioc_g_fmt_vid_out_mplane	= virtio_video_g_fmt,
 	.vidioc_s_fmt_vid_out_mplane	= virtio_video_dec_s_fmt,
 
