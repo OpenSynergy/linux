@@ -18,7 +18,12 @@
  */
 #include <linux/module.h>
 #include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,10,0)
+#include <linux/dma-map-ops.h>
+#else
+/* Only necessary during an out of tree build with older kernels. */
 #include <linux/dma-mapping.h>
+#endif
 
 #include "virtio_video.h"
 
