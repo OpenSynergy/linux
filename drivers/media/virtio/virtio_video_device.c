@@ -408,8 +408,17 @@ int virtio_video_stream_get_controls(struct virtio_video_device *vvd,
 
 	ret = virtio_video_cmd_get_control(vvd, stream,
 					   VIRTIO_VIDEO_CONTROL_BITRATE);
-	if (ret)
+	if (ret) {
 		v4l2_err(&vvd->v4l2_dev, "failed to get stream bitrate\n");
+		goto err_get_ctrl;
+	}
+
+	ret = virtio_video_cmd_get_control(vvd, stream,
+					   VIRTIO_VIDEO_CONTROL_BITRATE_MODE);
+	if (ret) {
+		v4l2_err(&vvd->v4l2_dev, "failed to get stream bitrate mode\n");
+		goto err_get_ctrl;
+	}
 
 err_get_ctrl:
 	return ret;
