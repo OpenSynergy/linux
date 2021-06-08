@@ -81,6 +81,7 @@ struct video_control_info {
 	uint32_t level;
 	uint32_t bitrate;
 	uint32_t bitrate_mode;
+	uint32_t bitrate_peak;
 };
 
 struct virtio_video_device;
