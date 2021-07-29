@@ -895,6 +895,23 @@ virtio_video_cmd_get_ctrl_bitrate_mode_cb(struct virtio_video_device *vvd,
 }
 
 static void
+virtio_video_cmd_get_ctrl_prepend_spspps_to_idr(struct virtio_video_device *vvd,
+						struct virtio_video_vbuffer *vbuf)
+{
+	struct virtio_video_get_control_resp *resp =
+		(struct virtio_video_get_control_resp *)vbuf->resp_buf;
+	struct virtio_video_control_val_prepend_spspps_to_idr *resp_ps = NULL;
+	struct virtio_video_stream *stream = vbuf->priv;
+	struct video_control_info *control = &stream->control;
+
+	resp_ps = (void *)((char *) resp +
+			   sizeof(struct virtio_video_get_control_resp));
+
+	control->prepend_spspps_to_idr = le32_to_cpu(
+		resp_ps->prepend_spspps_to_idr);
+}
+
+static void
 virtio_video_cmd_get_ctrl_bitrate_peak_cb(struct virtio_video_device *vvd,
 					  struct virtio_video_vbuffer *vbuf)
 {
@@ -943,6 +960,11 @@ int virtio_video_cmd_get_control(struct virtio_video_device *vvd,
 		resp_size += sizeof(struct virtio_video_control_val_bitrate_peak);
 		cb = &virtio_video_cmd_get_ctrl_bitrate_peak_cb;
 		break;
+	case VIRTIO_VIDEO_CONTROL_PREPEND_SPSPPS_TO_IDR:
+		resp_size += sizeof(
+			struct virtio_video_control_val_prepend_spspps_to_idr);
+		cb = &virtio_video_cmd_get_ctrl_prepend_spspps_to_idr;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -980,6 +1002,7 @@ int virtio_video_cmd_set_control(struct virtio_video_device *vvd,
 	struct virtio_video_control_val_bitrate *ctrl_b;
 	struct virtio_video_control_val_bitrate_mode *ctrl_bm;
 	struct virtio_video_control_val_bitrate_peak *ctrl_bp;
+	struct virtio_video_control_val_prepend_spspps_to_idr *ctrl_ps;
 	size_t size;
 
 	if (value == 0)
@@ -1003,6 +1026,9 @@ int virtio_video_cmd_set_control(struct virtio_video_device *vvd,
 		break;
 	case VIRTIO_VIDEO_CONTROL_FORCE_KEYFRAME:
 		size = 0;
+		break;
+	case VIRTIO_VIDEO_CONTROL_PREPEND_SPSPPS_TO_IDR:
+		size = sizeof(struct virtio_video_control_val_prepend_spspps_to_idr);
 		break;
 	default:
 		return -EINVAL;
@@ -1044,6 +1070,11 @@ int virtio_video_cmd_set_control(struct virtio_video_device *vvd,
 		break;
 	case VIRTIO_VIDEO_CONTROL_FORCE_KEYFRAME:
 		// Button controls have no value.
+		break;
+	case VIRTIO_VIDEO_CONTROL_PREPEND_SPSPPS_TO_IDR:
+		ctrl_ps = (void *)((char *)req_p +
+				  sizeof(struct virtio_video_set_control));
+		ctrl_ps->prepend_spspps_to_idr = cpu_to_le32(value);
 		break;
 	}
 

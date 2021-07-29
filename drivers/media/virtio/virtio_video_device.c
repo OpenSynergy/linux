@@ -427,6 +427,14 @@ int virtio_video_stream_get_controls(struct virtio_video_device *vvd,
 		goto err_get_ctrl;
 	}
 
+	ret = virtio_video_cmd_get_control(vvd, stream,
+					   VIRTIO_VIDEO_CONTROL_PREPEND_SPSPPS_TO_IDR);
+	if (ret) {
+		v4l2_err(&vvd->v4l2_dev,
+			 "failed to get stream prepend SPS/PPS to IDR control\n");
+		goto err_get_ctrl;
+	}
+
 err_get_ctrl:
 	return ret;
 }
