@@ -50,6 +50,8 @@
  */
 #define VIRTIO_VIDEO_F_RESOURCE_NON_CONTIG 1
 
+#define VIRTIO_VIDEO_MAX_PLANES 8
+
 /*
  * Image formats
  */
@@ -160,7 +162,7 @@ enum virtio_video_cmd_type {
 	VIRTIO_VIDEO_CMD_STREAM_CREATE,
 	VIRTIO_VIDEO_CMD_STREAM_DESTROY,
 	VIRTIO_VIDEO_CMD_STREAM_DRAIN,
-	VIRTIO_VIDEO_CMD_RESOURCE_CREATE,
+	VIRTIO_VIDEO_CMD_RESOURCE_ATTACH,
 	VIRTIO_VIDEO_CMD_RESOURCE_QUEUE,
 	VIRTIO_VIDEO_CMD_RESOURCE_DESTROY_ALL,
 	VIRTIO_VIDEO_CMD_QUEUE_CLEAR,
@@ -263,24 +265,36 @@ struct virtio_video_stream_drain {
 	struct virtio_video_cmd_hdr hdr;
 };
 
-/* VIRTIO_VIDEO_CMD_RESOURCE_CREATE */
-struct virtio_video_mem_entry {
+/* VIRTIO_VIDEO_CMD_RESOURCE_ATTACH */
+struct virtio_video_resource_object {
+	__u8 uuid [16];
+};
+
+struct virtio_video_resource_sg_entry {
 	__le64 addr;
 	__le32 length;
 	__u8 padding[4];
 };
 
-#define VIRTIO_VIDEO_MAX_PLANES 8
+struct virtio_video_resource_sg_list {
+	__le32 num_entries;
+	__u8 padding[4];
+	struct virtio_video_resource_sg_entry entries[];
+};
+#define VIRTIO_VIDEO_RESOURCE_SG_SIZE(n) \
+	offsetof(struct virtio_video_resource_sg_list, entries[n])
 
-struct virtio_video_resource_create {
-	struct virtio_video_cmd_hdr hdr;
-	__le32 queue_type; /* One of VIRTIO_VIDEO_QUEUE_TYPE_* types */
+union virtio_video_resource {
+	struct virtio_video_resource_sg_list sg_list;
+	struct virtio_video_resource_object object;
+};
+
+struct virtio_video_resource_attach {
+	__le32 cmd_type;
+	__le32 stream_id;
+	__le32 queue_type; /* VIRTIO_VIDEO_QUEUE_TYPE_* */
 	__le32 resource_id;
-	__le32 planes_layout;
-	__le32 num_planes;
-	__le32 plane_offsets[VIRTIO_VIDEO_MAX_PLANES];
-	__le32 num_entries[VIRTIO_VIDEO_MAX_PLANES];
-	/* Followed by struct virtio_video_mem_entry entries[] */
+	/* Followed by struct virtio_video_resource resources[] */
 };
 
 /* VIRTIO_VIDEO_CMD_RESOURCE_QUEUE */

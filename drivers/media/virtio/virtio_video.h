@@ -309,12 +309,10 @@ int virtio_video_cmd_stream_destroy(struct virtio_video_device *vvd,
 				    uint32_t stream_id);
 int virtio_video_cmd_stream_drain(struct virtio_video_device *vvd,
 				  uint32_t stream_id);
-int virtio_video_cmd_resource_create(struct virtio_video_device *vvd,
+int virtio_video_cmd_resource_attach(struct virtio_video_device *vvd,
 				     uint32_t stream_id, uint32_t resource_id,
 				     enum virtio_video_queue_type queue_type,
-				     struct virtio_video_mem_entry *ents,
-				     unsigned int num_planes,
-				     unsigned int *num_entry);
+				     void *buf, size_t buf_size);
 int
 virtio_video_cmd_resource_destroy_all(struct virtio_video_device *vvd,
 				      struct virtio_video_stream *stream,
