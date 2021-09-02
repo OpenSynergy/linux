@@ -299,30 +299,31 @@ struct virtio_video_resource_attach {
 
 /* VIRTIO_VIDEO_CMD_RESOURCE_QUEUE */
 struct virtio_video_resource_queue {
-	struct virtio_video_cmd_hdr hdr;
-	__le32 queue_type; /* One of VIRTIO_VIDEO_QUEUE_TYPE_* types */
+	__le32 cmd_type;
+	__le32 stream_id;
+	__le32 queue_type; /* VIRTIO_VIDEO_QUEUE_TYPE_* */
 	__le32 resource_id;
-	__le64 timestamp;
-	__le32 num_data_sizes;
-	__le32 data_sizes[VIRTIO_VIDEO_MAX_PLANES];
+	__le32 flags;      /* Bitmask with VIRTIO_VIDEO_ENQUEUE_FLAG_ * */
 	__u8 padding[4];
+	__le64 timestamp;
+	__le32 data_sizes[VIRTIO_VIDEO_MAX_PLANES];
 };
 
-enum virtio_video_buffer_flag {
-	VIRTIO_VIDEO_BUFFER_FLAG_ERR = 0x0001,
-	VIRTIO_VIDEO_BUFFER_FLAG_EOS = 0x0002,
+enum virtio_video_dequeue_flag {
+	VIRTIO_VIDEO_DEQUEUE_FLAG_ERR = 0,
+	VIRTIO_VIDEO_DEQUEUE_FLAG_EOS,
 
 	/* Encoder only */
-	VIRTIO_VIDEO_BUFFER_FLAG_IFRAME = 0x0004,
-	VIRTIO_VIDEO_BUFFER_FLAG_PFRAME = 0x0008,
-	VIRTIO_VIDEO_BUFFER_FLAG_BFRAME = 0x0010,
+	VIRTIO_VIDEO_DEQUEUE_FLAG_KEY_FRAME,
+	VIRTIO_VIDEO_DEQUEUE_FLAG_PFRAME,
+	VIRTIO_VIDEO_DEQUEUE_FLAG_BFRAME,
 };
 
 struct virtio_video_resource_queue_resp {
 	struct virtio_video_cmd_hdr hdr;
+	__le32 flags;
 	__le64 timestamp;
-	__le32 flags; /* One of VIRTIO_VIDEO_BUFFER_FLAG_* flags */
-	__le32 size; /* Encoded size */
+	__le32 data_sizes[VIRTIO_VIDEO_MAX_PLANES];
 };
 
 /* VIRTIO_VIDEO_CMD_RESOURCE_DESTROY_ALL */

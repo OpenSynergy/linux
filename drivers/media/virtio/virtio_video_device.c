@@ -691,7 +691,8 @@ int virtio_video_queue_release_buffers(struct virtio_video_stream *stream,
 }
 
 void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
-			   uint32_t flags, uint64_t timestamp, uint32_t size)
+			   uint32_t flags, uint64_t timestamp,
+			   uint32_t data_sizes[])
 {
 	int i;
 	enum vb2_buffer_state done_state = VB2_BUF_STATE_DONE;
@@ -704,26 +705,26 @@ void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
 
 	virtio_vb->queued = false;
 
-	if (flags & VIRTIO_VIDEO_BUFFER_FLAG_ERR)
+	if (flags & VIRTIO_VIDEO_DEQUEUE_FLAG_ERR)
 		done_state = VB2_BUF_STATE_ERROR;
 
-	if (flags & VIRTIO_VIDEO_BUFFER_FLAG_IFRAME)
+	if (flags & VIRTIO_VIDEO_DEQUEUE_FLAG_KEY_FRAME)
 		v4l2_vb->flags |= V4L2_BUF_FLAG_KEYFRAME;
 
-	if (flags & VIRTIO_VIDEO_BUFFER_FLAG_BFRAME)
+	if (flags & VIRTIO_VIDEO_DEQUEUE_FLAG_BFRAME)
 		v4l2_vb->flags |= V4L2_BUF_FLAG_BFRAME;
 
-	if (flags & VIRTIO_VIDEO_BUFFER_FLAG_PFRAME)
+	if (flags & VIRTIO_VIDEO_DEQUEUE_FLAG_PFRAME)
 		v4l2_vb->flags |= V4L2_BUF_FLAG_PFRAME;
 
-	if (flags & VIRTIO_VIDEO_BUFFER_FLAG_EOS) {
+	if (flags & VIRTIO_VIDEO_DEQUEUE_FLAG_EOS) {
 		v4l2_vb->flags |= V4L2_BUF_FLAG_LAST;
 		virtio_video_state_update(stream, STREAM_STATE_STOPPED);
 		virtio_video_queue_eos_event(stream);
 	}
 
-	if ((flags & VIRTIO_VIDEO_BUFFER_FLAG_ERR) ||
-	    (flags & VIRTIO_VIDEO_BUFFER_FLAG_EOS)) {
+	if ((flags & VIRTIO_VIDEO_DEQUEUE_FLAG_ERR) ||
+	    (flags & VIRTIO_VIDEO_DEQUEUE_FLAG_EOS)) {
 		vb->planes[0].bytesused = 0;
 		v4l2_m2m_buf_done(v4l2_vb, done_state);
 		return;
@@ -732,7 +733,9 @@ void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
 	if (!V4L2_TYPE_IS_OUTPUT(vb2_queue->type)) {
 		switch (vvd->type) {
 		case VIRTIO_VIDEO_DEVICE_ENCODER:
-			vb->planes[0].bytesused = size;
+			for (i = 0; i < vb->num_planes; i++)
+				vb->planes[i].bytesused =
+					le32_to_cpu(data_sizes[i]);
 			break;
 		case VIRTIO_VIDEO_DEVICE_DECODER:
 			p_info = &stream->out_info;

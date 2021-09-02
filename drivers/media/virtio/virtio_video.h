@@ -360,7 +360,8 @@ void virtio_video_event_cb(struct virtqueue *vq);
 void virtio_video_reclaim_events(struct work_struct *work);
 
 void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
-			   uint32_t flags, uint64_t timestamp, uint32_t size);
+			   uint32_t flags, uint64_t timestamp,
+			   uint32_t data_sizes[]);
 int virtio_video_buf_plane_init(uint32_t idx, uint32_t resource_id,
 				struct virtio_video_device *vvd,
 				struct virtio_video_stream *stream,

@@ -541,17 +541,16 @@ static void
 virtio_video_cmd_resource_queue_cb(struct virtio_video_device *vvd,
 				   struct virtio_video_vbuffer *vbuf)
 {
-	uint32_t flags, bytesused;
+	uint32_t flags;
 	uint64_t timestamp;
 	struct virtio_video_buffer *virtio_vb = vbuf->priv;
 	struct virtio_video_resource_queue_resp *resp =
 		(struct virtio_video_resource_queue_resp *)vbuf->resp_buf;
 
 	flags = le32_to_cpu(resp->flags);
-	bytesused = le32_to_cpu(resp->size);
 	timestamp = le64_to_cpu(resp->timestamp);
 
-	virtio_video_buf_done(virtio_vb, flags, timestamp, bytesused);
+	virtio_video_buf_done(virtio_vb, flags, timestamp, resp->data_sizes);
 }
 
 int virtio_video_cmd_resource_queue(struct virtio_video_device *vvd,
@@ -574,11 +573,11 @@ int virtio_video_cmd_resource_queue(struct virtio_video_device *vvd,
 	if (IS_ERR(req_p))
 		return PTR_ERR(req_p);
 
-	req_p->hdr.type = cpu_to_le32(VIRTIO_VIDEO_CMD_RESOURCE_QUEUE);
-	req_p->hdr.stream_id = cpu_to_le32(stream_id);
+	req_p->cmd_type = cpu_to_le32(VIRTIO_VIDEO_CMD_RESOURCE_QUEUE);
+	req_p->stream_id = cpu_to_le32(stream_id);
 	req_p->queue_type = cpu_to_le32(queue_type);
 	req_p->resource_id = cpu_to_le32(virtio_vb->resource_id);
-	req_p->num_data_sizes = num_data_size;
+	req_p->flags = 0;
 	req_p->timestamp =
 		cpu_to_le64(virtio_vb->v4l2_m2m_vb.vb.vb2_buf.timestamp);
 
