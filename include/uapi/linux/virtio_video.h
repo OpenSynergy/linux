@@ -164,7 +164,7 @@ enum virtio_video_cmd_type {
 	VIRTIO_VIDEO_CMD_STREAM_DRAIN,
 	VIRTIO_VIDEO_CMD_RESOURCE_ATTACH,
 	VIRTIO_VIDEO_CMD_RESOURCE_QUEUE,
-	VIRTIO_VIDEO_CMD_RESOURCE_DESTROY_ALL,
+	VIRTIO_VIDEO_CMD_QUEUE_DETACH_RESOURCES,
 	VIRTIO_VIDEO_CMD_QUEUE_CLEAR,
 	VIRTIO_VIDEO_CMD_GET_PARAMS,
 	VIRTIO_VIDEO_CMD_SET_PARAMS,
@@ -326,9 +326,10 @@ struct virtio_video_resource_queue_resp {
 	__le32 data_sizes[VIRTIO_VIDEO_MAX_PLANES];
 };
 
-/* VIRTIO_VIDEO_CMD_RESOURCE_DESTROY_ALL */
-struct virtio_video_resource_destroy_all {
-	struct virtio_video_cmd_hdr hdr;
+/* VIRTIO_VIDEO_CMD_QUEUE_DETACH_RESOURCES */
+struct virtio_video_queue_detach_resources {
+	__le32 cmd_type;
+	__le32 stream_id;
 	__le32 queue_type; /* One of VIRTIO_VIDEO_QUEUE_TYPE_* types */
 	__u8 padding[4];
 };

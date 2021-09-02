@@ -508,21 +508,20 @@ int virtio_video_cmd_resource_attach(struct virtio_video_device *vvd,
 	return virtio_video_queue_cmd_buffer(vvd, vbuf);
 }
 
-int
-virtio_video_cmd_resource_destroy_all(struct virtio_video_device *vvd,
-				      struct virtio_video_stream *stream,
-				      enum virtio_video_queue_type queue_type)
+int virtio_video_cmd_queue_detach_resources(struct virtio_video_device *vvd,
+				struct virtio_video_stream *stream,
+				enum virtio_video_queue_type queue_type)
 {
 	int ret;
-	struct virtio_video_resource_destroy_all *req_p;
+	struct virtio_video_queue_detach_resources *req_p;
 	struct virtio_video_vbuffer *vbuf;
 
 	req_p = virtio_video_alloc_req(vvd, &vbuf, sizeof(*req_p));
 	if (IS_ERR(req_p))
 		return PTR_ERR(req_p);
 
-	req_p->hdr.type = cpu_to_le32(VIRTIO_VIDEO_CMD_RESOURCE_DESTROY_ALL);
-	req_p->hdr.stream_id = cpu_to_le32(stream->stream_id);
+	req_p->cmd_type = cpu_to_le32(VIRTIO_VIDEO_CMD_QUEUE_DETACH_RESOURCES);
+	req_p->stream_id = cpu_to_le32(stream->stream_id);
 	req_p->queue_type = cpu_to_le32(queue_type);
 
 	ret = virtio_video_queue_cmd_buffer_sync(vvd, vbuf);

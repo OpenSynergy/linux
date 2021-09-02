@@ -313,15 +313,14 @@ int virtio_video_cmd_resource_attach(struct virtio_video_device *vvd,
 				     uint32_t stream_id, uint32_t resource_id,
 				     enum virtio_video_queue_type queue_type,
 				     void *buf, size_t buf_size);
-int
-virtio_video_cmd_resource_destroy_all(struct virtio_video_device *vvd,
-				      struct virtio_video_stream *stream,
-				      enum virtio_video_queue_type queue_type);
 int virtio_video_cmd_resource_queue(struct virtio_video_device *vvd,
 				    uint32_t stream_id,
 				    struct virtio_video_buffer *virtio_vb,
 				    uint32_t data_size[], uint8_t num_data_size,
 				    enum virtio_video_queue_type queue_type);
+int virtio_video_cmd_queue_detach_resources(struct virtio_video_device *vvd,
+				struct virtio_video_stream *stream,
+				enum virtio_video_queue_type queue_type);
 int virtio_video_cmd_queue_clear(struct virtio_video_device *vvd,
 				 struct virtio_video_stream *stream,
 				 enum virtio_video_queue_type queue_type);

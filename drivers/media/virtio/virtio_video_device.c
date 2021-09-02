@@ -596,8 +596,7 @@ static int virtio_video_queue_free(struct virtio_video_device *vvd,
 	int ret;
 	enum virtio_video_queue_type queue_type = to_virtio_queue_type(type);
 
-	ret = virtio_video_cmd_resource_destroy_all(vvd, stream,
-						    queue_type);
+	ret = virtio_video_cmd_queue_detach_resources(vvd, stream, queue_type);
 	if (ret) {
 		v4l2_warn(&vvd->v4l2_dev,
 			  "failed to destroy resources\n");
