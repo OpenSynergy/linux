@@ -78,17 +78,17 @@ build_virtio_video_sglist_contig(struct virtio_video_resource_sg_list *sgl,
 static unsigned int
 build_virtio_video_sglist(struct virtio_video_resource_sg_list *sgl,
 			  struct vb2_buffer *vb, unsigned int plane,
-			  bool has_iommu)
+			  bool use_dma_api)
 {
 	int i;
 	struct scatterlist *sg;
 	struct sg_table *sgt = vb2_dma_sg_plane_desc(vb, plane);
 
 	for_each_sg(sgt->sgl, sg, sgt->nents, i) {
-		sgl->entries[i].addr = cpu_to_le64(has_iommu
+		sgl->entries[i].addr = cpu_to_le64(use_dma_api
 							? sg_dma_address(sg)
 							: sg_phys(sg));
-		sgl->entries[i].length = cpu_to_le32(has_iommu
+		sgl->entries[i].length = cpu_to_le32(use_dma_api
 							? sg_dma_len(sg)
 							: sg->length);
 	}
@@ -124,7 +124,7 @@ static int virtio_video_buf_init_guest_pages(struct vb2_buffer *vb)
 		for (i = 0; i < vb->num_planes; i++) {
 			sg_list = buf + offset;
 			offset += build_virtio_video_sglist(sg_list, vb, i,
-							    vvd->has_iommu);
+							    vvd->use_dma_api);
 		}
 	} else {
 		buf_size = vb->num_planes * VIRTIO_VIDEO_RESOURCE_SG_SIZE(1);

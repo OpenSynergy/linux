@@ -93,7 +93,7 @@ static int virtio_video_probe(struct virtio_device *vdev)
 	if (virtio_has_feature(vdev, VIRTIO_VIDEO_F_RESOURCE_NON_CONTIG))
 		vvd->supp_non_contig = true;
 
-	vvd->has_iommu = !virtio_has_dma_quirk(vdev);
+	vvd->use_dma_api = !virtio_has_dma_quirk(vdev);
 
 	dev->iommu_group = pdev->iommu_group;
 #if KERNEL_VERSION(5, 7, 0) > LINUX_VERSION_CODE

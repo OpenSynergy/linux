@@ -172,7 +172,7 @@ struct virtio_video_device {
 	uint32_t max_caps_len;
 	uint32_t max_resp_len;
 
-	bool has_iommu;
+	bool use_dma_api;
 	bool supp_non_contig;
 
 	int debug;
