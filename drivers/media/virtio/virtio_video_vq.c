@@ -68,9 +68,30 @@ void virtio_video_stream_id_put(struct virtio_video_device *vvd, uint32_t id)
 	spin_unlock(&vvd->stream_idr_lock);
 }
 
+static bool vbuf_is_pending(struct virtio_video_device *vvd,
+			    struct virtio_video_vbuffer *vbuf)
+{
+	struct virtio_video_vbuffer *entry;
+
+	list_for_each_entry(entry, &vvd->pending_vbuf_list, pending_list_entry)
+	{
+		if (entry == vbuf && entry->id == vbuf->id)
+			return true;
+	}
+
+	return false;
+}
+
 static void free_vbuf(struct virtio_video_device *vvd,
 		      struct virtio_video_vbuffer *vbuf)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&vvd->commandq.qlock, flags);
+	if (vbuf_is_pending(vvd, vbuf))
+		list_del(&vbuf->pending_list_entry);
+	spin_unlock_irqrestore(&vvd->commandq.qlock, flags);
+
 	kfree(vbuf->data_buf);
 	kmem_cache_free(vvd->vbufs, vbuf);
 }
@@ -83,8 +104,10 @@ static void reclaim_vbufs(struct virtqueue *vq, struct list_head *reclaim_list)
 	int freed = 0;
 
 	while ((vbuf = virtqueue_get_buf(vq, &len))) {
-		list_add_tail(&vbuf->list, reclaim_list);
-		freed++;
+		if ((vq == vvd->eventq.vq) || vbuf_is_pending(vvd, vbuf)) {
+			list_add_tail(&vbuf->list, reclaim_list);
+			freed++;
+		}
 	}
 
 	if (freed == 0)
@@ -279,6 +302,9 @@ virtio_video_queue_cmd_buffer(struct virtio_video_device *vvd,
 		return -ENODEV;
 
 	spin_lock_irqsave(&vvd->commandq.qlock, flags);
+
+	vbuf->id = vvd->vbufs_sent++;
+	list_add_tail(&vbuf->pending_list_entry, &vvd->pending_vbuf_list);
 
 	sg_init_one(&vreq, vbuf->buf, vbuf->size);
 	sgs[outcnt + incnt] = &vreq;

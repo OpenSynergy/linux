@@ -102,6 +102,7 @@ typedef void (*virtio_video_resp_cb)(struct virtio_video_device *vvd,
 struct virtio_video_vbuffer {
 	char *buf;
 	int size;
+	uint32_t id;
 
 	void *data_buf;
 	uint32_t data_size;
@@ -116,6 +117,7 @@ struct virtio_video_vbuffer {
 	struct completion reclaimed;
 
 	struct list_head list;
+	struct list_head pending_list_entry;
 };
 
 struct virtio_video_cmd_queue {
@@ -182,6 +184,9 @@ struct virtio_video_device {
 	struct mutex video_dev_mutex;
 
 	struct v4l2_m2m_dev *m2m_dev;
+
+	uint32_t vbufs_sent;
+	struct list_head pending_vbuf_list;
 
 	/* vid_dev_nr - try register starting at video device number */
 	int vid_dev_nr;

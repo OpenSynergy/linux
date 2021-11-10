@@ -117,6 +117,8 @@ static int virtio_video_probe(struct virtio_device *vdev)
 	spin_lock_init(&vvd->eventq.qlock);
 	INIT_WORK(&vvd->eventq.reclaim_work, virtio_video_reclaim_events);
 
+	INIT_LIST_HEAD(&vvd->pending_vbuf_list);
+
 	ret = virtio_find_vqs(vdev, 2, vqs, callbacks, names, NULL);
 	if (ret) {
 		v4l2_err(&vvd->v4l2_dev, "failed to find virt queues\n");
