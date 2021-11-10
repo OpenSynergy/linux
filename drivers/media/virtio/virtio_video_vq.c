@@ -85,69 +85,70 @@ static bool vbuf_is_pending(struct virtio_video_device *vvd,
 static void free_vbuf(struct virtio_video_device *vvd,
 		      struct virtio_video_vbuffer *vbuf)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&vvd->commandq.qlock, flags);
+	/* Temporary check for skipping event vbufs, which is not tracked */
 	if (vbuf_is_pending(vvd, vbuf))
 		list_del(&vbuf->pending_list_entry);
-	spin_unlock_irqrestore(&vvd->commandq.qlock, flags);
 
 	kfree(vbuf->data_buf);
 	kmem_cache_free(vvd->vbufs, vbuf);
 }
 
-static void reclaim_vbufs(struct virtqueue *vq, struct list_head *reclaim_list)
-{
-	struct virtio_video_vbuffer *vbuf;
-	unsigned int len;
-	struct virtio_video_device *vvd = vq->vdev->priv;
-	int freed = 0;
-
-	while ((vbuf = virtqueue_get_buf(vq, &len))) {
-		if ((vq == vvd->eventq.vq) || vbuf_is_pending(vvd, vbuf)) {
-			list_add_tail(&vbuf->list, reclaim_list);
-			freed++;
-		}
-	}
-
-	if (freed == 0)
-		v4l2_dbg(1, vvd->debug, &vvd->v4l2_dev,
-			 "zero vbufs reclaimed\n");
-}
-
 void virtio_video_cmd_cb(struct virtqueue *vq)
 {
-	struct list_head reclaim_list;
-	struct virtio_video_vbuffer *entry, *tmp;
-	struct virtio_video_cmd_hdr *resp;
 	struct virtio_video_device *vvd = vq->vdev->priv;
+	struct virtio_video_vbuffer *vbuf;
+	unsigned long flags;
+	unsigned int len;
 
-	INIT_LIST_HEAD(&reclaim_list);
-	spin_lock(&vvd->commandq.qlock);
-	do {
-		virtqueue_disable_cb(vvd->commandq.vq);
-		reclaim_vbufs(vvd->commandq.vq, &reclaim_list);
+	spin_lock_irqsave(&vvd->commandq.qlock, flags);
+	while (vvd->commandq.ready) {
+		virtqueue_disable_cb(vq);
 
-	} while (!virtqueue_enable_cb(vvd->commandq.vq));
-	spin_unlock(&vvd->commandq.qlock);
+		while ((vbuf = virtqueue_get_buf(vq, &len))) {
+			if (!vbuf_is_pending(vvd, vbuf))
+				continue;
 
-	list_for_each_entry_safe(entry, tmp, &reclaim_list, list) {
-		resp = (struct virtio_video_cmd_hdr *)entry->resp_buf;
-		if (resp->type >=
-		    cpu_to_le32(VIRTIO_VIDEO_RESP_ERR_INVALID_OPERATION))
-			v4l2_dbg(1, vvd->debug, &vvd->v4l2_dev,
-				 "response 0x%x\n", le32_to_cpu(resp->type));
-		list_del(&entry->list);
+			if (vbuf->resp_cb)
+				vbuf->resp_cb(vvd, vbuf);
 
-		if (entry->resp_cb)
-			entry->resp_cb(vvd, entry);
+			if (vbuf->is_sync)
+				complete(&vbuf->reclaimed);
+			else
+				free_vbuf(vvd, vbuf);
+		}
 
-		if (entry->is_sync)
-			complete(&entry->reclaimed);
-		else
-			free_vbuf(vvd, entry);
+		if (unlikely(virtqueue_is_broken(vq)))
+			break;
+
+		if (virtqueue_enable_cb(vq))
+			break;
 	}
+	spin_unlock_irqrestore(&vvd->commandq.qlock, flags);
+
 	wake_up(&vvd->commandq.reclaim_queue);
+}
+
+void virtio_video_reclaim_events(struct work_struct *work)
+{
+	struct virtio_video_device *vvd =
+		container_of(work, struct virtio_video_device,
+			     eventq.reclaim_work);
+	struct virtqueue *vq = vvd->eventq.vq;
+	struct virtio_video_vbuffer *vbuf;
+	unsigned int len;
+
+	while (vvd->eventq.ready) {
+		virtqueue_disable_cb(vq);
+
+		while ((vbuf = virtqueue_get_buf(vq, &len)))
+			vbuf->resp_cb(vvd, vbuf);
+
+		if (unlikely(virtqueue_is_broken(vq)))
+			break;
+
+		if (virtqueue_enable_cb(vq))
+			break;
+	}
 }
 
 void virtio_video_event_cb(struct virtqueue *vq)
@@ -204,6 +205,8 @@ static void virtio_video_detach_vbufs(struct virtio_video_device *vvd)
 	if (list_empty(&detach_list))
 		return;
 
+	/* Operation on vbufs here is lock safe, since before device was
+           deinitialized and queues was stopped (in not ready state) */
 	list_for_each_entry_safe(entry, tmp, &detach_list, list) {
 		list_del(&entry->list);
 		free_vbuf(vvd, entry);
@@ -266,28 +269,6 @@ virtio_video_alloc_req_resp(struct virtio_video_device *vvd,
 	return vbuf->buf;
 }
 
-void virtio_video_reclaim_events(struct work_struct *work)
-{
-	struct list_head reclaim_list;
-	struct virtio_video_vbuffer *entry, *tmp;
-	struct virtio_video_device *vvd =
-		container_of(work, struct virtio_video_device,
-			     eventq.reclaim_work);
-
-	INIT_LIST_HEAD(&reclaim_list);
-	spin_lock(&vvd->eventq.qlock);
-	do {
-		virtqueue_disable_cb(vvd->eventq.vq);
-		reclaim_vbufs(vvd->eventq.vq, &reclaim_list);
-	} while (!virtqueue_enable_cb(vvd->eventq.vq));
-	spin_unlock(&vvd->eventq.qlock);
-
-	list_for_each_entry_safe(entry, tmp, &reclaim_list, list) {
-		entry->resp_cb(vvd, entry);
-		list_del(&entry->list);
-	}
-}
-
 static int
 virtio_video_queue_cmd_buffer(struct virtio_video_device *vvd,
 			      struct virtio_video_vbuffer *vbuf)
@@ -298,7 +279,7 @@ virtio_video_queue_cmd_buffer(struct virtio_video_device *vvd,
 	int outcnt = 0, incnt = 0;
 	int ret;
 
-	if (!vvd->vq_ready)
+	if (!vvd->commandq.ready)
 		return -ENODEV;
 
 	spin_lock_irqsave(&vvd->commandq.qlock, flags);
@@ -344,6 +325,7 @@ virtio_video_queue_cmd_buffer_sync(struct virtio_video_device *vvd,
 {
 	int ret;
 	unsigned long rem;
+	unsigned long flags;
 
 	vbuf->is_sync = true;
 	init_completion(&vbuf->reclaimed);
@@ -356,6 +338,11 @@ virtio_video_queue_cmd_buffer_sync(struct virtio_video_device *vvd,
 	if (rem == 0)
 		ret = -ETIMEDOUT;
 
+	spin_lock_irqsave(&vvd->commandq.qlock, flags);
+	if (vbuf_is_pending(vvd, vbuf))
+		free_vbuf(vvd, vbuf);
+	spin_unlock_irqrestore(&vvd->commandq.qlock, flags);
+
 	return ret;
 }
 
@@ -366,10 +353,8 @@ static int virtio_video_queue_event_buffer(struct virtio_video_device *vvd,
 	struct scatterlist vresp;
 	struct virtqueue *vq = vvd->eventq.vq;
 
-	spin_lock(&vvd->eventq.qlock);
 	sg_init_one(&vresp, vbuf->resp_buf, vbuf->resp_size);
 	ret = virtqueue_add_inbuf(vq, &vresp, 1, vbuf, GFP_ATOMIC);
-	spin_unlock(&vvd->eventq.qlock);
 	if (ret)
 		return ret;
 
@@ -559,9 +544,6 @@ int virtio_video_cmd_queue_detach_resources(struct virtio_video_device *vvd,
 			 "timed out waiting for resource destruction for %s\n",
 			 (queue_type == VIRTIO_VIDEO_QUEUE_TYPE_INPUT) ?
 			 "OUTPUT" : "CAPTURE");
-
-	free_vbuf(vvd, vbuf);
-
 	return ret;
 }
 
@@ -643,9 +625,6 @@ int virtio_video_cmd_queue_clear(struct virtio_video_device *vvd,
 			 "timed out waiting for %s queue clear\n",
 			 (queue_type == VIRTIO_VIDEO_QUEUE_TYPE_INPUT) ?
 			 "OUTPUT" : "CAPTURE");
-
-	free_vbuf(vvd, vbuf);
-
 	return ret;
 }
 
@@ -672,9 +651,6 @@ int virtio_video_cmd_query_capability(struct virtio_video_device *vvd,
 			 "timed out waiting for capabilities for %s\n",
 			 (queue_type == VIRTIO_VIDEO_QUEUE_TYPE_INPUT) ?
 			 "OUTPUT" : "CAPTURE");
-
-	free_vbuf(vvd, vbuf);
-
 	return ret;
 }
 
@@ -707,9 +683,6 @@ int virtio_video_query_control_level(struct virtio_video_device *vvd,
 	if (ret == -ETIMEDOUT)
 		v4l2_err(&vvd->v4l2_dev,
 			 "timed out waiting for level query\n");
-
-	free_vbuf(vvd, vbuf);
-
 	return ret;
 }
 
@@ -742,9 +715,6 @@ int virtio_video_query_control_profile(struct virtio_video_device *vvd,
 	if (ret == -ETIMEDOUT)
 		v4l2_err(&vvd->v4l2_dev,
 			 "timed out waiting for profile query\n");
-
-	free_vbuf(vvd, vbuf);
-
 	return ret;
 }
 
@@ -822,9 +792,6 @@ int virtio_video_cmd_get_params(struct virtio_video_device *vvd,
 	if (ret == -ETIMEDOUT)
 		v4l2_err(&vvd->v4l2_dev,
 			 "timed out waiting for get_params\n");
-
-	free_vbuf(vvd, vbuf);
-
 	return ret;
 }
 
@@ -962,9 +929,6 @@ int virtio_video_cmd_get_control(struct virtio_video_device *vvd,
 	if (ret == -ETIMEDOUT)
 		v4l2_err(&vvd->v4l2_dev,
 			 "timed out waiting for get_control\n");
-
-	free_vbuf(vvd, vbuf);
-
 	return ret;
 }
 

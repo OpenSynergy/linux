@@ -1039,6 +1039,9 @@ err_output_buf:
 
 void virtio_video_device_deinit(struct virtio_video_device *vvd)
 {
+	vvd->commandq.ready = false;
+	vvd->eventq.ready = false;
+
 	virtio_video_device_unregister(vvd);
 	v4l2_m2m_release(vvd->m2m_dev);
 	virtio_video_clean_control(vvd);

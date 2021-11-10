@@ -122,13 +122,14 @@ struct virtio_video_vbuffer {
 
 struct virtio_video_cmd_queue {
 	struct virtqueue *vq;
+	bool ready;
 	spinlock_t qlock;
 	wait_queue_head_t reclaim_queue;
 };
 
 struct virtio_video_event_queue {
 	struct virtqueue *vq;
-	spinlock_t qlock;
+	bool ready;
 	struct work_struct reclaim_work;
 };
 
@@ -161,7 +162,6 @@ struct virtio_video_device {
 	struct virtio_video_cmd_queue commandq;
 	struct virtio_video_event_queue eventq;
 	wait_queue_head_t wq;
-	bool vq_ready;
 
 	struct kmem_cache *vbufs;
 

@@ -114,7 +114,6 @@ static int virtio_video_probe(struct virtio_device *vdev)
 	spin_lock_init(&vvd->commandq.qlock);
 	init_waitqueue_head(&vvd->commandq.reclaim_queue);
 
-	spin_lock_init(&vvd->eventq.qlock);
 	INIT_WORK(&vvd->eventq.reclaim_work, virtio_video_reclaim_events);
 
 	INIT_LIST_HEAD(&vvd->pending_vbuf_list);
@@ -155,7 +154,8 @@ static int virtio_video_probe(struct virtio_device *vdev)
 		goto err_events;
 
 	virtio_device_ready(vdev);
-	vvd->vq_ready = true;
+	vvd->commandq.ready = true;
+	vvd->eventq.ready = true;
 
 	ret = virtio_video_device_init(vvd);
 	if (ret) {
