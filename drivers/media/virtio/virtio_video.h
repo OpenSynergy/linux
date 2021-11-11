@@ -116,7 +116,6 @@ struct virtio_video_vbuffer {
 	bool is_sync;
 	struct completion reclaimed;
 
-	struct list_head list;
 	struct list_head pending_list_entry;
 };
 
@@ -130,7 +129,7 @@ struct virtio_video_cmd_queue {
 struct virtio_video_event_queue {
 	struct virtqueue *vq;
 	bool ready;
-	struct work_struct reclaim_work;
+	struct work_struct work;
 };
 
 enum video_stream_state {
@@ -164,6 +163,7 @@ struct virtio_video_device {
 	wait_queue_head_t wq;
 
 	struct kmem_cache *vbufs;
+	struct virtio_video_event *evts;
 
 	struct idr resource_idr;
 	spinlock_t resource_idr_lock;
@@ -290,7 +290,7 @@ void virtio_video_state_update(struct virtio_video_stream *stream,
 
 int virtio_video_alloc_vbufs(struct virtio_video_device *vvd);
 void virtio_video_free_vbufs(struct virtio_video_device *vvd);
-int virtio_video_alloc_events(struct virtio_video_device *vvd, size_t num);
+int virtio_video_alloc_events(struct virtio_video_device *vvd);
 
 int virtio_video_device_init(struct virtio_video_device *vvd);
 void virtio_video_device_deinit(struct virtio_video_device *vvd);
@@ -361,7 +361,7 @@ int virtio_video_queue_release_buffers(struct virtio_video_stream *stream,
 
 void virtio_video_cmd_cb(struct virtqueue *vq);
 void virtio_video_event_cb(struct virtqueue *vq);
-void virtio_video_reclaim_events(struct work_struct *work);
+void virtio_video_process_events(struct work_struct *work);
 
 void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
 			   uint32_t flags, uint64_t timestamp,

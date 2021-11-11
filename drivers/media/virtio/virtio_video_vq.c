@@ -28,6 +28,11 @@
 			       + MAX_INLINE_CMD_SIZE		   \
 			       + MAX_INLINE_RESP_SIZE)
 
+static int virtio_video_queue_event_buffer(struct virtio_video_device *vvd,
+					   struct virtio_video_event *evt);
+static void virtio_video_handle_event(struct virtio_video_device *vvd,
+				      struct virtio_video_event *evt);
+
 void virtio_video_resource_id_get(struct virtio_video_device *vvd, uint32_t *id)
 {
 	int handle;
@@ -85,10 +90,7 @@ static bool vbuf_is_pending(struct virtio_video_device *vvd,
 static void free_vbuf(struct virtio_video_device *vvd,
 		      struct virtio_video_vbuffer *vbuf)
 {
-	/* Temporary check for skipping event vbufs, which is not tracked */
-	if (vbuf_is_pending(vvd, vbuf))
-		list_del(&vbuf->pending_list_entry);
-
+	list_del(&vbuf->pending_list_entry);
 	kfree(vbuf->data_buf);
 	kmem_cache_free(vvd->vbufs, vbuf);
 }
@@ -128,20 +130,21 @@ void virtio_video_cmd_cb(struct virtqueue *vq)
 	wake_up(&vvd->commandq.reclaim_queue);
 }
 
-void virtio_video_reclaim_events(struct work_struct *work)
+void virtio_video_process_events(struct work_struct *work)
 {
-	struct virtio_video_device *vvd =
-		container_of(work, struct virtio_video_device,
-			     eventq.reclaim_work);
+	struct virtio_video_device *vvd = container_of(work,
+			struct virtio_video_device, eventq.work);
 	struct virtqueue *vq = vvd->eventq.vq;
-	struct virtio_video_vbuffer *vbuf;
+	struct virtio_video_event *evt;
 	unsigned int len;
 
 	while (vvd->eventq.ready) {
 		virtqueue_disable_cb(vq);
 
-		while ((vbuf = virtqueue_get_buf(vq, &len)))
-			vbuf->resp_cb(vvd, vbuf);
+		while ((evt = virtqueue_get_buf(vq, &len))) {
+			virtio_video_handle_event(vvd, evt);
+			virtio_video_queue_event_buffer(vvd, evt);
+		}
 
 		if (unlikely(virtqueue_is_broken(vq)))
 			break;
@@ -155,7 +158,7 @@ void virtio_video_event_cb(struct virtqueue *vq)
 {
 	struct virtio_video_device *vvd = vq->vdev->priv;
 
-	schedule_work(&vvd->eventq.reclaim_work);
+	schedule_work(&vvd->eventq.work);
 }
 
 static struct virtio_video_vbuffer *
@@ -184,35 +187,6 @@ virtio_video_get_vbuf(struct virtio_video_device *vvd, int size, int resp_size,
 	return vbuf;
 }
 
-static void detach_vbufs(struct virtqueue *vq, struct list_head *detach_list)
-{
-	struct virtio_video_vbuffer *vbuf;
-
-	while ((vbuf = virtqueue_detach_unused_buf(vq)) != NULL)
-		list_add_tail(&vbuf->list, detach_list);
-}
-
-static void virtio_video_detach_vbufs(struct virtio_video_device *vvd)
-{
-	struct list_head detach_list;
-	struct virtio_video_vbuffer *entry, *tmp;
-
-	INIT_LIST_HEAD(&detach_list);
-
-	detach_vbufs(vvd->eventq.vq, &detach_list);
-	detach_vbufs(vvd->commandq.vq, &detach_list);
-
-	if (list_empty(&detach_list))
-		return;
-
-	/* Operation on vbufs here is lock safe, since before device was
-           deinitialized and queues was stopped (in not ready state) */
-	list_for_each_entry_safe(entry, tmp, &detach_list, list) {
-		list_del(&entry->list);
-		free_vbuf(vvd, entry);
-	}
-}
-
 int virtio_video_alloc_vbufs(struct virtio_video_device *vvd)
 {
 	vvd->vbufs =
@@ -227,9 +201,24 @@ int virtio_video_alloc_vbufs(struct virtio_video_device *vvd)
 
 void virtio_video_free_vbufs(struct virtio_video_device *vvd)
 {
-	virtio_video_detach_vbufs(vvd);
+	struct virtio_video_vbuffer *vbuf;
+
+	/* Release command buffers. Operation on vbufs here is lock safe,
+           since before device was deinitialized and queues was stopped
+           (in not ready state) */
+	while ((vbuf = virtqueue_detach_unused_buf(vvd->commandq.vq))) {
+		if (vbuf_is_pending(vvd, vbuf))
+			free_vbuf(vvd, vbuf);
+	}
+
 	kmem_cache_destroy(vvd->vbufs);
 	vvd->vbufs = NULL;
+
+	/* Release event buffers */
+	while (virtqueue_detach_unused_buf(vvd->eventq.vq));
+
+	kfree(vvd->evts);
+	vvd->evts = NULL;
 }
 
 static void *virtio_video_alloc_req(struct virtio_video_device *vvd,
@@ -347,16 +336,20 @@ virtio_video_queue_cmd_buffer_sync(struct virtio_video_device *vvd,
 }
 
 static int virtio_video_queue_event_buffer(struct virtio_video_device *vvd,
-					   struct virtio_video_vbuffer *vbuf)
+					   struct virtio_video_event *evt)
 {
 	int ret;
-	struct scatterlist vresp;
+	struct scatterlist sg;
 	struct virtqueue *vq = vvd->eventq.vq;
 
-	sg_init_one(&vresp, vbuf->resp_buf, vbuf->resp_size);
-	ret = virtqueue_add_inbuf(vq, &vresp, 1, vbuf, GFP_ATOMIC);
-	if (ret)
+	memset(evt, 0, sizeof(struct virtio_video_event));
+	sg_init_one(&sg, evt, sizeof(struct virtio_video_event));
+
+	ret = virtqueue_add_inbuf(vq, &sg, 1, evt, GFP_KERNEL);
+	if (ret) {
+		v4l2_err(&vvd->v4l2_dev, "failed to queue event buffer\n");
 		return ret;
+	}
 
 	virtqueue_kick(vq);
 
@@ -364,13 +357,11 @@ static int virtio_video_queue_event_buffer(struct virtio_video_device *vvd,
 }
 
 static void virtio_video_handle_event(struct virtio_video_device *vvd,
-				      struct virtio_video_vbuffer *vbuf)
+				      struct virtio_video_event *evt)
 {
 	int ret;
 	struct virtio_video_stream *stream;
-	struct virtio_video_event *event =
-		(struct virtio_video_event *)vbuf->resp_buf;
-	uint32_t stream_id = event->stream_id;
+	uint32_t stream_id = evt->stream_id;
 	struct video_device *vd = &vvd->video_dev;
 
 	mutex_lock(vd->lock);
@@ -383,7 +374,7 @@ static void virtio_video_handle_event(struct virtio_video_device *vvd,
 		return;
 	}
 
-	switch (le32_to_cpu(event->event_type)) {
+	switch (le32_to_cpu(evt->event_type)) {
 	case VIRTIO_VIDEO_EVENT_DECODER_RESOLUTION_CHANGED:
 		v4l2_dbg(1, vvd->debug, &vvd->v4l2_dev,
 			 "stream_id=%u: resolution change event\n", stream_id);
@@ -409,27 +400,24 @@ static void virtio_video_handle_event(struct virtio_video_device *vvd,
 	}
 
 	mutex_unlock(vd->lock);
-
-	memset(vbuf->resp_buf, 0, vbuf->resp_size);
-	ret = virtio_video_queue_event_buffer(vvd, vbuf);
-	if (ret)
-		v4l2_err(&vvd->v4l2_dev, "failed to queue event buffer\n");
 }
 
-int virtio_video_alloc_events(struct virtio_video_device *vvd, size_t num)
+int virtio_video_alloc_events(struct virtio_video_device *vvd)
 {
 	int ret;
 	size_t i;
-	struct virtio_video_vbuffer *vbuf;
+	struct virtio_video_event *evts;
+	size_t num =  vvd->eventq.vq->num_free;
+
+	evts = kzalloc(num * sizeof(struct virtio_video_event), GFP_KERNEL);
+	if (!evts) {
+		v4l2_err(&vvd->v4l2_dev, "failed to alloc event buffers!!!\n");
+		return -ENOMEM;
+	}
+	vvd->evts = evts;
 
 	for (i = 0; i < num; i++) {
-		vbuf = virtio_video_get_vbuf(vvd, 0,
-					     sizeof(struct virtio_video_event),
-					     NULL, virtio_video_handle_event);
-		if (IS_ERR(vbuf))
-			return PTR_ERR(vbuf);
-
-		ret = virtio_video_queue_event_buffer(vvd, vbuf);
+		ret = virtio_video_queue_event_buffer(vvd, &evts[i]);
 		if (ret) {
 			v4l2_err(&vvd->v4l2_dev,
 				 "failed to queue event buffer\n");
