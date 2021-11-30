@@ -539,18 +539,31 @@ static int virtio_video_enc_s_parm(struct file *file, void *priv,
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
 	struct v4l2_outputparm *out = &a->parm.output;
 	struct v4l2_fract *timeperframe = &out->timeperframe;
+	struct v4l2_fract stps;
+
+	/* To comply with V4l2 docs, reset frame interval if zero was supplied */
+	virtio_video_timeperframe_from_info(&stream->in_info, &stps);
+	if (!timeperframe->numerator)
+		timeperframe->numerator = stps.numerator;
+	if (!timeperframe->denominator)
+		timeperframe->denominator = stps.denominator;
 
 	if (virtio_video_state(stream) == STREAM_STATE_ERROR)
 		return -EIO;
 
 	if (V4L2_TYPE_IS_OUTPUT(a->type)) {
-		frame_interval = timeperframe->numerator * (u64)USEC_PER_SEC;
-		do_div(frame_interval, timeperframe->denominator);
-		if (!frame_interval)
-			return -EINVAL;
-
-		frame_rate = (u64)USEC_PER_SEC;
-		do_div(frame_rate, frame_interval);
+		if (!timeperframe->denominator) {
+			frame_rate = 0;
+		} else {
+			frame_interval = timeperframe->numerator * (u64)USEC_PER_SEC;
+			do_div(frame_interval, timeperframe->denominator);
+			if (!frame_interval) {
+				frame_rate = stream->in_info.frame_rate;
+			} else {
+				frame_rate = (u64)USEC_PER_SEC;
+				do_div(frame_rate, frame_interval);
+			}
+		}
 	} else {
 		v4l2_err(&vvd->v4l2_dev,
 			 "setting FPS is only possible for the output queue\n");
