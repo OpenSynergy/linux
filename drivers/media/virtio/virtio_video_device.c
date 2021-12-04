@@ -269,9 +269,9 @@ int virtio_video_buf_init(struct vb2_buffer *vb)
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
 
 	switch (vvd->res_type) {
-	case RESOURCE_TYPE_GUEST_PAGES:
+	case VIRTIO_VIDEO_MEM_TYPE_GUEST_PAGES:
 		return virtio_video_buf_init_guest_pages(vb);
-	case RESOURCE_TYPE_VIRTIO_OBJECT:
+	case VIRTIO_VIDEO_MEM_TYPE_VIRTIO_OBJECT:
 		return virtio_video_buf_init_virtio_object(vb);
 	default:
 		return -EINVAL;
@@ -286,7 +286,7 @@ int virtio_video_buf_prepare(struct vb2_buffer *vb)
 	uuid_t uuid;
 	int ret;
 
-	if (vvd->res_type != RESOURCE_TYPE_VIRTIO_OBJECT)
+	if (vvd->res_type != VIRTIO_VIDEO_MEM_TYPE_VIRTIO_OBJECT)
 		return 0;
 
 	ret = virtio_video_get_dma_buf_id(vvd, vb, &uuid);

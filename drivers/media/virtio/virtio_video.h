@@ -149,18 +149,13 @@ struct virtio_video_stream {
 	struct mutex event_mutex;
 };
 
-enum virtio_video_resource_type {
-	RESOURCE_TYPE_GUEST_PAGES = 0,
-	RESOURCE_TYPE_VIRTIO_OBJECT,
-};
-
 struct virtio_video_device {
 	struct virtio_device *vdev;
 	struct virtio_video_cmd_queue commandq;
 	struct virtio_video_event_queue eventq;
 	wait_queue_head_t wq;
 
-	enum virtio_video_resource_type res_type;
+	u32 res_type;
 
 	struct kmem_cache *vbufs;
 	struct virtio_video_event *evts;
