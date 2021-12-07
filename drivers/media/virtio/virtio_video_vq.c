@@ -731,6 +731,17 @@ virtio_video_cmd_get_params_cb(struct virtio_video_device *vvd,
 	format_info->max_buffers = le32_to_cpu(params->max_buffers);
 	format_info->fourcc_format =
 		virtio_video_format_to_v4l2(le32_to_cpu(params->format));
+	/*
+	 * The virtio-video device has a "no format currently set" state. Translate this into the
+	 * first supported format as V4L2 devices must always have an active format.
+	 */
+	if (!format_info->fourcc_format) {
+		struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+		struct video_format *fmt;
+		fmt = list_first_entry(&vvd->output_fmt_list,
+				       struct video_format, formats_list_entry);
+		format_info->fourcc_format = fmt ? fmt->desc.format : 0;
+	}
 
 	format_info->crop.top = le32_to_cpu(params->crop.top);
 	format_info->crop.left = le32_to_cpu(params->crop.left);
