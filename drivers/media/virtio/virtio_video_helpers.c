@@ -335,7 +335,7 @@ int virtio_video_frmivalenum_from_fmt(struct video_format *fmt,
 			break;
 	}
 
-	if (frame == NULL || idx >= frame->num_rates)
+	if (f_idx == fmt->desc.num_frames || idx >= frame->num_rates)
 		return -EINVAL;
 
 	frate = &frm->frame_rates[idx];
