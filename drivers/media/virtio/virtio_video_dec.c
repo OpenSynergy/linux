@@ -386,13 +386,12 @@ static int virtio_video_dec_s_selection(struct file *file, void *fh,
 		return -EINVAL;
 	}
 
-	ret = virtio_video_cmd_set_params(vvd, stream,  &stream->out_info,
-					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
+	/* Set selection and get actual params that were set */
+	ret = virtio_video_update_params(vvd, stream, NULL, &stream->out_info);
 	if (ret)
 		return -EINVAL;
 
-	return virtio_video_cmd_get_params(vvd, stream,
-					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
+	return 0;
 }
 
 static const struct v4l2_ioctl_ops virtio_video_dec_ioctl_ops = {

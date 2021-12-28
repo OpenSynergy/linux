@@ -371,8 +371,7 @@ static void virtio_video_handle_event(struct virtio_video_device *vvd,
 	case VIRTIO_VIDEO_EVENT_DECODER_RESOLUTION_CHANGED:
 		v4l2_dbg(1, vvd->debug, &vvd->v4l2_dev,
 			 "stream_id=%u: resolution change event\n", stream_id);
-		virtio_video_cmd_get_params(vvd, stream,
-					   VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
+		virtio_video_update_params(vvd, stream, NULL, NULL);
 		virtio_video_queue_res_chg_event(stream);
 		if (virtio_video_state(stream) == STREAM_STATE_INIT) {
 			virtio_video_state_update(stream,

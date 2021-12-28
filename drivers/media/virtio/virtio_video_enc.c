@@ -577,9 +577,7 @@ static int virtio_video_enc_s_parm(struct file *file, void *priv,
 	virtio_video_format_fill_default_info(&info, &stream->in_info);
 	info.frame_rate = frame_rate;
 
-	virtio_video_cmd_set_params(vvd, stream, &info,
-				    VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
-	virtio_video_stream_get_params(vvd, stream);
+	virtio_video_update_params(vvd, stream, &info, NULL);
 
 	out->capability = V4L2_CAP_TIMEPERFRAME;
 	virtio_video_timeperframe_from_info(&stream->in_info, timeperframe);
@@ -608,13 +606,12 @@ static int virtio_video_enc_s_selection(struct file *file, void *fh,
 		return -EINVAL;
 	}
 
-	ret = virtio_video_cmd_set_params(vvd, stream,  &stream->in_info,
-					  VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
+	/* Set selection and get actual params that were set */
+	ret = virtio_video_update_params(vvd, stream, &stream->in_info, NULL);
 	if (ret)
 		return -EINVAL;
 
-	return virtio_video_cmd_get_params(vvd, stream,
-					   VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
+	return 0;
 }
 
 static const struct v4l2_ioctl_ops virtio_video_enc_ioctl_ops = {

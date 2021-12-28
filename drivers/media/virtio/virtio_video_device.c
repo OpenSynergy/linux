@@ -480,19 +480,15 @@ int virtio_video_s_fmt(struct file *file, void *fh, struct v4l2_format *f)
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
 	struct video_format_info info;
 	struct video_format_info *p_info;
-	uint32_t queue;
 
 	ret = virtio_video_try_fmt(stream, f);
 	if (ret)
 		return ret;
 
-	if (V4L2_TYPE_IS_OUTPUT(f->type)) {
+	if (V4L2_TYPE_IS_OUTPUT(f->type))
 		virtio_video_format_fill_default_info(&info, &stream->in_info);
-		queue = VIRTIO_VIDEO_QUEUE_TYPE_INPUT;
-	} else {
+	else
 		virtio_video_format_fill_default_info(&info, &stream->out_info);
-		queue = VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT;
-	}
 
 	info.frame_width = pix_mp->width;
 	info.frame_height = pix_mp->height;
@@ -506,13 +502,13 @@ int virtio_video_s_fmt(struct file *file, void *fh, struct v4l2_format *f)
 					 pix_mp->plane_fmt[i].sizeimage;
 	}
 
-	virtio_video_cmd_set_params(vvd, stream, &info, queue);
-	virtio_video_stream_get_params(vvd, stream);
-
-	if (V4L2_TYPE_IS_OUTPUT(f->type))
+	if (V4L2_TYPE_IS_OUTPUT(f->type)) {
+		virtio_video_update_params(vvd, stream, &info, NULL);
 		p_info = &stream->in_info;
-	else
+	} else {
+		virtio_video_update_params(vvd, stream, NULL, &info);
 		p_info = &stream->out_info;
+	}
 
 	virtio_video_format_from_info(p_info, pix_mp);
 
@@ -769,6 +765,29 @@ int virtio_video_queue_release_buffers(struct virtio_video_stream *stream,
 	}
 
 	return 0;
+}
+
+int virtio_video_update_params(struct virtio_video_device *vvd,
+			       struct virtio_video_stream *stream,
+			       struct video_format_info *in_info,
+			       struct video_format_info *out_info)
+{
+	int ret;
+
+	if (in_info) {
+		ret = virtio_video_cmd_set_params(vvd, stream, in_info,
+						  VIRTIO_VIDEO_QUEUE_TYPE_INPUT);
+		if (ret)
+			return ret;
+	}
+	if (out_info) {
+		ret = virtio_video_cmd_set_params(vvd, stream, out_info,
+						  VIRTIO_VIDEO_QUEUE_TYPE_OUTPUT);
+		if (ret)
+			return ret;
+	}
+
+	return virtio_video_stream_get_params(vvd, stream);
 }
 
 void virtio_video_buf_done(struct virtio_video_buffer *virtio_vb,
