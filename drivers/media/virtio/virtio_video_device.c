@@ -1070,6 +1070,7 @@ int virtio_video_device_init(struct virtio_video_device *vvd)
 		break;
 	case VIRTIO_VIDEO_DEVICE_DECODER:
 	default:
+		v4l2_disable_ioctl(vd, VIDIOC_ENUM_FRAMEINTERVALS);
 		virtio_video_dec_init(vvd);
 		break;
 	}
