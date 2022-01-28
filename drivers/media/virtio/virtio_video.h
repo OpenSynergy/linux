@@ -145,7 +145,6 @@ struct virtio_video_stream {
 	struct video_format_info in_info;
 	struct video_format_info out_info;
 	struct video_control_info control;
-	struct video_format_frame *current_frame;
 	struct mutex event_mutex;
 };
 
@@ -421,6 +420,10 @@ virtio_video_find_compatible_output_format(struct virtio_video_stream *stream,
 struct video_format *
 virtio_video_find_compatible_input_format(struct virtio_video_stream *stream,
 					  uint32_t fourcc_format);
+struct video_format_frame *
+virtio_video_find_format(struct virtio_video_stream *stream,
+			 uint32_t type, uint32_t pixelformat,
+			 uint32_t frame_width, uint32_t frame_height);
 void virtio_video_format_from_info(struct video_format_info *info,
 				   struct v4l2_pix_format_mplane *pix_mp);
 void virtio_video_format_fill_default_info(struct video_format_info *dst_info,
