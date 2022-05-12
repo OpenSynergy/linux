@@ -92,6 +92,7 @@ static enum vdso_clock_mode vdso_default = VDSO_CLOCKMODE_ARCHTIMER;
 #else
 static enum vdso_clock_mode vdso_default = VDSO_CLOCKMODE_NONE;
 #endif /* CONFIG_GENERIC_GETTIMEOFDAY */
+static enum arch_timer_counter_type arch_counter_type __ro_after_init = ARCH_COUNTER_CP15_VIRT;
 
 static cpumask_t evtstrm_available = CPU_MASK_NONE;
 static bool evtstrm_enable __ro_after_init = IS_ENABLED(CONFIG_ARM_ARCH_TIMER_EVTSTREAM);
@@ -1087,17 +1088,20 @@ static void __init arch_counter_register(unsigned type)
 				rd = arch_counter_get_cntvct_stable;
 			else
 				rd = arch_counter_get_cntvct;
+			arch_counter_type = ARCH_COUNTER_CP15_VIRT;
 		} else {
 			if (arch_timer_counter_has_wa())
 				rd = arch_counter_get_cntpct_stable;
 			else
 				rd = arch_counter_get_cntpct;
+			arch_counter_type = ARCH_COUNTER_CP15_PHYS;
 		}
 
 		arch_timer_read_counter = rd;
 		clocksource_counter.vdso_clock_mode = vdso_default;
 	} else {
 		arch_timer_read_counter = arch_counter_get_cntvct_mem;
+		arch_counter_type = ARCH_COUNTER_MEM_VIRT;
 	}
 
 	width = arch_counter_get_width();
@@ -1750,6 +1754,18 @@ static int __init arch_timer_acpi_init(struct acpi_table_header *table)
 }
 TIMER_ACPI_DECLARE(arch_timer, ACPI_SIG_GTDT, arch_timer_acpi_init);
 #endif
+
+enum arch_timer_counter_type arch_timer_counter_get_type(void)
+{
+	return arch_counter_type;
+}
+EXPORT_SYMBOL_GPL(arch_timer_counter_get_type);
+
+struct clocksource *arch_timer_get_cs(void)
+{
+	return &clocksource_counter;
+}
+EXPORT_SYMBOL_GPL(arch_timer_get_cs);
 
 int kvm_arch_ptp_get_crosststamp(u64 *cycle, struct timespec64 *ts,
 				 struct clocksource **cs)

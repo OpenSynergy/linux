@@ -43,6 +43,13 @@ enum arch_timer_spi_nr {
 	ARCH_TIMER_MAX_TIMER_SPI
 };
 
+enum arch_timer_counter_type {
+	ARCH_COUNTER_CP15_VIRT,
+	ARCH_COUNTER_CP15_PHYS,
+	ARCH_COUNTER_MEM_VIRT,
+	ARCH_COUNTER_MEM_PHYS,
+};
+
 #define ARCH_TIMER_PHYS_ACCESS		0
 #define ARCH_TIMER_VIRT_ACCESS		1
 #define ARCH_TIMER_MEM_PHYS_ACCESS	2
@@ -89,6 +96,8 @@ extern u32 arch_timer_get_rate(void);
 extern u64 (*arch_timer_read_counter)(void);
 extern struct arch_timer_kvm_info *arch_timer_get_kvm_info(void);
 extern bool arch_timer_evtstrm_available(void);
+extern enum arch_timer_counter_type arch_timer_counter_get_type(void);
+extern struct clocksource *arch_timer_get_cs(void);
 
 #else
 
@@ -105,6 +114,16 @@ static inline u64 arch_timer_read_counter(void)
 static inline bool arch_timer_evtstrm_available(void)
 {
 	return false;
+}
+
+static inline enum arch_timer_counter_type arch_timer_counter_get_type(void)
+{
+	return ARCH_COUNTER_CP15_VIRT;
+}
+
+static inline struct clocksource *arch_timer_get_cs(void)
+{
+	return NULL;
 }
 
 #endif
