@@ -1313,7 +1313,7 @@ struct system_counterval_t convert_art_to_tsc(u64 art)
 	res += tmp + art_to_tsc_offset;
 
 	return (struct system_counterval_t) {
-		.cs = have_art ? &clocksource_tsc : NULL,
+		.cs_id = have_art ? CSID_TSC : CSID_GENERIC,
 		.cycles = res
 	};
 }
@@ -1335,7 +1335,7 @@ EXPORT_SYMBOL(convert_art_to_tsc);
  * struct system_counterval_t - system counter value with the pointer to the
  *	corresponding clocksource
  *	@cycles:	System counter value
- *	@cs:		Clocksource corresponding to system counter value. Used
+ *	@cs_id:		Clocksource corresponding to system counter value. Used
  *			by timekeeping code to verify comparability of two cycle
  *			values.
  */
@@ -1353,7 +1353,7 @@ struct system_counterval_t convert_art_ns_to_tsc(u64 art_ns)
 	res += tmp;
 
 	return (struct system_counterval_t) {
-		.cs = have_art ? &clocksource_tsc : NULL,
+		.cs_id = have_art ? CSID_TSC : CSID_GENERIC,
 		.cycles = res
 	};
 }

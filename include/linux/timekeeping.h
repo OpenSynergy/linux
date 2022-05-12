@@ -270,12 +270,12 @@ struct system_device_crosststamp {
  * struct system_counterval_t - system counter value with the pointer to the
  *				corresponding clocksource
  * @cycles:	System counter value
- * @cs:		Clocksource corresponding to system counter value. Used by
+ * @cs_id:	Clocksource corresponding to system counter value. Used by
  *		timekeeping code to verify comparibility of two cycle values
  */
 struct system_counterval_t {
 	u64			cycles;
-	struct clocksource	*cs;
+	enum clocksource_ids	cs_id;
 };
 
 /*
