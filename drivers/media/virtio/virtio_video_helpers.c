@@ -115,6 +115,13 @@ uint32_t virtio_video_v4l2_profile_to_virtio(uint32_t v4l2_profile)
 	return 0;
 }
 
+/* Unfortunately all necessary RGB formats definitions are not
+ * available before kernel version 5.2. So for compatibility and
+ * according to other available examples these formats are mapped
+ * in a weird way:
+ *   V4L2_PIX_FMT_ABGR32 -> BGRA 32 bit format
+ *   V4L2_PIX_FMT_RGB32  -> RGBA 32 bit format.
+ */
 static struct virtio_video_convert_table format_table[] = {
 	{ VIRTIO_VIDEO_FORMAT_ARGB8888, V4L2_PIX_FMT_ARGB32 },
 	{ VIRTIO_VIDEO_FORMAT_BGRA8888, V4L2_PIX_FMT_ABGR32 },
