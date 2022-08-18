@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0+
 
+# During development, to turn-off treating warning as error, pass
+# `CFLAGS_MODULE=-Wno-error` to make as an argument or environment variable.
+ccflags-y += -Werror
+
 obj-$(CONFIG_VIRTIO_VIDEO) += virtio-video.o
 
 virtio-video-objs := \
