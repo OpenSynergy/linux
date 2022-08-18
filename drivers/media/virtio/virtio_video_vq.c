@@ -359,7 +359,6 @@ static int virtio_video_queue_event_buffer(struct virtio_video_device *vvd,
 static void virtio_video_handle_event(struct virtio_video_device *vvd,
 				      struct virtio_video_event *evt)
 {
-	int ret;
 	struct virtio_video_stream *stream;
 	uint32_t stream_id = evt->stream_id;
 	struct video_device *vd = &vvd->video_dev;
