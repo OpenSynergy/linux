@@ -1259,10 +1259,15 @@ int get_device_system_crosststamp(int (*get_time_fn)
 				      tk_core.timekeeper.offs_real);
 		base_raw = tk->tkr_raw.base;
 
-		nsec_real = timekeeping_cycles_to_ns(&tk->tkr_mono,
-						     system_counterval.cycles);
-		nsec_raw = timekeeping_cycles_to_ns(&tk->tkr_raw,
-						    system_counterval.cycles);
+		if (do_interp) {
+			nsec_real = timekeeping_delta_to_ns(&tk->tkr_mono, 0);
+			nsec_raw = timekeeping_delta_to_ns(&tk->tkr_raw, 0);
+		} else {
+			nsec_real = timekeeping_cycles_to_ns(
+				&tk->tkr_mono, system_counterval.cycles);
+			nsec_raw = timekeeping_cycles_to_ns(
+				&tk->tkr_raw, system_counterval.cycles);
+		}
 	} while (read_seqcount_retry(&tk_core.seq, seq));
 
 	xtstamp->sys_realtime = ktime_add_ns(base_real, nsec_real);
