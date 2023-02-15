@@ -137,7 +137,7 @@ int virtio_video_buf_init(struct vb2_buffer *vb)
 							    vvd->has_iommu);
 		}
 	} else {
-		buf_size = vb->num_planes * VIRTIO_VIDEO_RESOURCE_SG_SIZE(nents);
+		buf_size = vb->num_planes * VIRTIO_VIDEO_RESOURCE_SG_SIZE(1);
 
 		buf = kcalloc(1, buf_size, GFP_KERNEL);
 		if (!buf)
