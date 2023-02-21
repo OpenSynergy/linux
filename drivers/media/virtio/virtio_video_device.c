@@ -98,7 +98,9 @@ build_virtio_video_sglist(struct virtio_video_resource_sg_list *sgl,
 		sgl->entries[i].addr = cpu_to_le64(has_iommu
 							? sg_dma_address(sg)
 							: sg_phys(sg));
-		sgl->entries[i].length = cpu_to_le32(sg->length);
+		sgl->entries[i].length = cpu_to_le32(has_iommu
+							? sg_dma_len(sg)
+							: sg->length);
 	}
 
 	sgl->num_entries = sgt->nents;
