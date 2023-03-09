@@ -419,6 +419,8 @@ void virtio_video_format_fill_default_info(struct video_format_info *dst_info,
 					   struct video_format_info *src_info);
 int virtio_video_frmsizeenum_from_fmt(struct video_format *fmt,
 				      struct v4l2_frmsizeenum *f);
+int virtio_video_frmivalenum_from_fmt(struct video_format *fmt,
+				      struct v4l2_frmivalenum *f);
 
 int virtio_video_g_selection(struct file *file, void *fh,
 			     struct v4l2_selection *sel);

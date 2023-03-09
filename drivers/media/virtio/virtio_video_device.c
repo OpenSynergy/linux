@@ -258,70 +258,20 @@ int virtio_video_enum_framesizes(struct file *file, void *fh,
 	return virtio_video_frmsizeenum_from_fmt(fmt, f);
 }
 
-static bool in_stepped_interval(struct virtio_video_format_range range,
-				uint32_t point)
-{
-	if (point < range.min || point > range.max)
-		return false;
-
-	if (range.step == 0 && range.min == range.max && range.min == point)
-		return true;
-
-	if (range.step != 0 && (point - range.min) % range.step == 0)
-		return true;
-
-	return false;
-}
-
 int virtio_video_enum_framemintervals(struct file *file, void *fh,
 				      struct v4l2_frmivalenum *f)
 {
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
 	struct video_format *fmt;
-	struct video_format_frame *frm;
-	struct virtio_video_format_frame *frame = NULL;
-	struct virtio_video_format_range *frate;
-	int idx = f->index;
-	int f_idx;
 
 	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
 					     f->pixel_format);
 	if (fmt == NULL)
 		fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
 						     f->pixel_format);
-	if (fmt == NULL)
-		return -EINVAL;
 
-	for (f_idx = 0; f_idx < fmt->desc.num_frames; f_idx++) {
-		frm = &fmt->frames[f_idx];
-		frame = &frm->frame;
-		if (in_stepped_interval(frame->width, f->width) &&
-		    in_stepped_interval(frame->height, f->height))
-			break;
-	}
-
-	if (frame == NULL || f->index >= frame->num_rates)
-		return -EINVAL;
-
-	frate = &frm->frame_rates[idx];
-	if (frate->max == frate->min) {
-		f->type = V4L2_FRMIVAL_TYPE_DISCRETE;
-		f->discrete.numerator = 1;
-		f->discrete.denominator = frate->max;
-	} else {
-		f->stepwise.min.numerator = 1;
-		f->stepwise.min.denominator = frate->max;
-		f->stepwise.max.numerator = 1;
-		f->stepwise.max.denominator = frate->min;
-		f->stepwise.step.numerator = 1;
-		f->stepwise.step.denominator = frate->step;
-		if (frate->step == 1)
-			f->type = V4L2_FRMIVAL_TYPE_CONTINUOUS;
-		else
-			f->type = V4L2_FRMIVAL_TYPE_STEPWISE;
-	}
-	return 0;
+	return virtio_video_frmivalenum_from_fmt(fmt, f);
 }
 
 int virtio_video_stream_get_params(struct virtio_video_device *vvd,
