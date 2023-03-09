@@ -306,7 +306,7 @@ int virtio_video_enum_framemintervals(struct file *file, void *fh,
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
 	struct video_format *fmt;
 	struct video_format_frame *frm;
-	struct virtio_video_format_frame *frame;
+	struct virtio_video_format_frame *frame = NULL;
 	struct virtio_video_format_range *frate;
 	int idx = f->index;
 	int f_idx;
@@ -319,7 +319,7 @@ int virtio_video_enum_framemintervals(struct file *file, void *fh,
 	if (fmt == NULL)
 		return -EINVAL;
 
-	for (f_idx = 0; f_idx <= fmt->desc.num_frames; f_idx++) {
+	for (f_idx = 0; f_idx < fmt->desc.num_frames; f_idx++) {
 		frm = &fmt->frames[f_idx];
 		frame = &frm->frame;
 		if (in_stepped_interval(frame->width, f->width) &&
