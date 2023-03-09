@@ -192,7 +192,7 @@ int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
 			goto parse_fmt_err;
 		}
 		offset += fmt_size;
-		list_add(&fmt->formats_list_entry, ret_fmt_list);
+		list_add_tail(&fmt->formats_list_entry, ret_fmt_list);
 	}
 
 	*ret_num_fmts = fmt_count;
