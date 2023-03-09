@@ -248,40 +248,14 @@ int virtio_video_enum_framesizes(struct file *file, void *fh,
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
 	struct video_format *fmt;
-	struct video_format_frame *frm;
-	struct virtio_video_format_frame *frame;
-	int idx = f->index;
 
 	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
 					     f->pixel_format);
 	if (fmt == NULL)
 		fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
 						     f->pixel_format);
-	if (fmt == NULL)
-		return -EINVAL;
 
-	if (idx >= fmt->desc.num_frames)
-		return -EINVAL;
-
-	frm = &fmt->frames[idx];
-	frame = &frm->frame;
-
-	if (frame->width.min == frame->width.max &&
-	    frame->height.min == frame->height.max) {
-		f->type = V4L2_FRMSIZE_TYPE_DISCRETE;
-		f->discrete.width = frame->width.min;
-		f->discrete.height = frame->height.min;
-		return 0;
-	}
-
-	f->type = V4L2_FRMSIZE_TYPE_CONTINUOUS;
-	f->stepwise.min_width = frame->width.min;
-	f->stepwise.max_width = frame->width.max;
-	f->stepwise.min_height = frame->height.min;
-	f->stepwise.max_height = frame->height.max;
-	f->stepwise.step_width = frame->width.step;
-	f->stepwise.step_height = frame->height.step;
-	return 0;
+	return virtio_video_frmsizeenum_from_fmt(fmt, f);
 }
 
 static bool in_stepped_interval(struct virtio_video_format_range range,
