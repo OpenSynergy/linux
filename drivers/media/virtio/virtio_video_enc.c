@@ -405,6 +405,42 @@ static int virtio_video_enc_s_fmt(struct file *file, void *fh,
 	return 0;
 }
 
+int virtio_video_enc_enum_framesizes(struct file *file, void *fh,
+				     struct v4l2_frmsizeenum *f)
+{
+	struct virtio_video_stream *stream = file2stream(file);
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct video_format *fmt;
+
+	fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
+					     f->pixel_format);
+	if (fmt == NULL) {
+		/* not an output format, try looking at compatible inputs */
+		fmt = virtio_video_find_compatible_input_format(stream,
+								f->pixel_format);
+	}
+
+	return virtio_video_frmsizeenum_from_fmt(fmt, f);
+}
+
+int virtio_video_enc_enum_framemintervals(struct file *file, void *fh,
+					  struct v4l2_frmivalenum *f)
+{
+	struct virtio_video_stream *stream = file2stream(file);
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct video_format *fmt;
+
+	fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
+					     f->pixel_format);
+	if (fmt == NULL) {
+		/* not an output format, try looking at compatible inputs */
+		fmt = virtio_video_find_compatible_input_format(stream,
+								f->pixel_format);
+	}
+
+	return virtio_video_frmivalenum_from_fmt(fmt, f);
+}
+
 static int virtio_video_enc_try_framerate(struct virtio_video_stream *stream,
 					  unsigned int fps)
 {
@@ -545,8 +581,8 @@ static const struct v4l2_ioctl_ops virtio_video_enc_ioctl_ops = {
 
 	.vidioc_try_encoder_cmd	= virtio_video_try_encoder_cmd,
 	.vidioc_encoder_cmd	= virtio_video_encoder_cmd,
-	.vidioc_enum_frameintervals = virtio_video_enum_framemintervals,
-	.vidioc_enum_framesizes = virtio_video_enum_framesizes,
+	.vidioc_enum_frameintervals = virtio_video_enc_enum_framemintervals,
+	.vidioc_enum_framesizes = virtio_video_enc_enum_framesizes,
 
 	.vidioc_g_selection = virtio_video_g_selection,
 	.vidioc_s_selection = virtio_video_enc_s_selection,

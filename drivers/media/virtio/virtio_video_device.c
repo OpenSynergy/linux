@@ -242,38 +242,6 @@ int virtio_video_querycap(struct file *file, void *fh,
 	return 0;
 }
 
-int virtio_video_enum_framesizes(struct file *file, void *fh,
-				 struct v4l2_frmsizeenum *f)
-{
-	struct virtio_video_stream *stream = file2stream(file);
-	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct video_format *fmt;
-
-	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
-					     f->pixel_format);
-	if (fmt == NULL)
-		fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
-						     f->pixel_format);
-
-	return virtio_video_frmsizeenum_from_fmt(fmt, f);
-}
-
-int virtio_video_enum_framemintervals(struct file *file, void *fh,
-				      struct v4l2_frmivalenum *f)
-{
-	struct virtio_video_stream *stream = file2stream(file);
-	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
-	struct video_format *fmt;
-
-	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
-					     f->pixel_format);
-	if (fmt == NULL)
-		fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
-						     f->pixel_format);
-
-	return virtio_video_frmivalenum_from_fmt(fmt, f);
-}
-
 int virtio_video_stream_get_params(struct virtio_video_device *vvd,
 				   struct virtio_video_stream *stream)
 {

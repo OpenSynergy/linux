@@ -352,3 +352,61 @@ int virtio_video_frmivalenum_from_fmt(struct video_format *fmt,
 	}
 	return 0;
 }
+
+/** Find output video_format compatible with current stream input */
+struct video_format *
+virtio_video_find_compatible_output_format(struct virtio_video_stream *stream,
+					   uint32_t fourcc_format)
+{
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct video_format *fmt, *matching_fmt = NULL;
+	unsigned long mask = 0;
+	int bit_num = 0;
+
+	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
+					     stream->in_info.fourcc_format);
+	if (fmt == NULL)
+		return NULL;
+
+	mask = fmt->desc.mask;
+	list_for_each_entry(fmt, &vvd->output_fmt_list, formats_list_entry) {
+		if (test_bit(bit_num, &mask)) {
+			if (fmt->desc.format == fourcc_format) {
+				matching_fmt = fmt;
+				break;
+			}
+		}
+		bit_num++;
+	}
+
+	return matching_fmt;
+}
+
+/** Find input video_format compatible with current stream output */
+struct video_format *
+virtio_video_find_compatible_input_format(struct virtio_video_stream *stream,
+					  uint32_t fourcc_format)
+{
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct video_format *fmt, *matching_fmt = NULL;
+	unsigned long mask = 0;
+	int bit_num = 0;
+
+	fmt = virtio_video_find_video_format(&vvd->output_fmt_list,
+					     stream->out_info.fourcc_format);
+	if (fmt == NULL)
+		return NULL;
+
+	mask = fmt->desc.mask;
+	list_for_each_entry(fmt, &vvd->input_fmt_list, formats_list_entry) {
+		if (test_bit(bit_num, &mask)) {
+			if (fmt->desc.format == fourcc_format) {
+				matching_fmt = fmt;
+				break;
+			}
+		}
+		bit_num++;
+	}
+
+	return matching_fmt;
+}

@@ -327,6 +327,42 @@ static int virtio_video_dec_s_fmt(struct file *file, void *fh,
 	return 0;
 }
 
+int virtio_video_dec_enum_framesizes(struct file *file, void *fh,
+				     struct v4l2_frmsizeenum *f)
+{
+	struct virtio_video_stream *stream = file2stream(file);
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct video_format *fmt;
+
+	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
+					     f->pixel_format);
+	if (fmt == NULL) {
+		/* not an input format, try looking at compatible outputs */
+		fmt = virtio_video_find_compatible_output_format(stream,
+								 f->pixel_format);
+	}
+
+	return virtio_video_frmsizeenum_from_fmt(fmt, f);
+}
+
+int virtio_video_dec_enum_framemintervals(struct file *file, void *fh,
+					  struct v4l2_frmivalenum *f)
+{
+	struct virtio_video_stream *stream = file2stream(file);
+	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
+	struct video_format *fmt;
+
+	fmt = virtio_video_find_video_format(&vvd->input_fmt_list,
+					     f->pixel_format);
+	if (fmt == NULL) {
+		/* not an input format, try looking at compatible outputs */
+		fmt = virtio_video_find_compatible_output_format(stream,
+								 f->pixel_format);
+	}
+
+	return virtio_video_frmivalenum_from_fmt(fmt, f);
+}
+
 static int virtio_video_dec_s_selection(struct file *file, void *fh,
 					struct v4l2_selection *sel)
 {
@@ -374,8 +410,8 @@ static const struct v4l2_ioctl_ops virtio_video_dec_ioctl_ops = {
 
 	.vidioc_try_decoder_cmd	= virtio_video_try_decoder_cmd,
 	.vidioc_decoder_cmd	= virtio_video_decoder_cmd,
-	.vidioc_enum_frameintervals = virtio_video_enum_framemintervals,
-	.vidioc_enum_framesizes = virtio_video_enum_framesizes,
+	.vidioc_enum_frameintervals = virtio_video_dec_enum_framemintervals,
+	.vidioc_enum_framesizes = virtio_video_dec_enum_framesizes,
 
 	.vidioc_reqbufs		= virtio_video_reqbufs,
 	.vidioc_querybuf	= v4l2_m2m_ioctl_querybuf,
