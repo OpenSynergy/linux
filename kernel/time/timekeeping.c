@@ -1180,13 +1180,13 @@ static int adjust_historical_crosststamp(struct system_time_snapshot *history,
 }
 
 /*
- * cycle_between - true if test occurs chronologically between before and after
+ * cycle_between - true if test occurs chronologically in [before, after]
  */
 static bool cycle_between(u64 before, u64 test, u64 after)
 {
-	if (test > before && test < after)
+	if (test >= before && test <= after)
 		return true;
-	if (before > after && (test > before || test < after))
+	if (before > after && (test >= before || test <= after))
 		return true;
 	return false;
 }
@@ -1282,6 +1282,7 @@ int get_device_system_crosststamp(int (*get_time_fn)
 		 * clocksource change
 		 */
 		if (!history_begin ||
+		    history_begin->cycles == system_counterval.cycles ||
 		    !cycle_between(history_begin->cycles,
 				   system_counterval.cycles, cycles) ||
 		    history_begin->cs_was_changed_seq != cs_was_changed_seq)
