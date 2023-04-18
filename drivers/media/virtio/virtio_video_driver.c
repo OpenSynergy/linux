@@ -94,6 +94,16 @@ static int virtio_video_probe(struct virtio_device *vdev)
 
 	vvd->has_iommu = !virtio_has_dma_quirk(vdev);
 
+	dev->iommu_group = pdev->iommu_group;
+#if KERNEL_VERSION(5, 7, 0) > LINUX_VERSION_CODE
+	dev->iommu_fwspec = pdev->iommu_fwspec;
+#endif
+#if KERNEL_VERSION(5, 6, 0) <= LINUX_VERSION_CODE
+	dev->iommu = pdev->iommu;
+#elif KERNEL_VERSION(5, 2, 0) <= LINUX_VERSION_CODE
+	dev->iommu_param = pdev->iommu_param;
+#endif
+
 	if (!dev->dma_ops)
 		set_dma_ops(dev, pdev->dma_ops);
 
