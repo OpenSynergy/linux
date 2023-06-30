@@ -187,4 +187,20 @@ config VIRTIO_RTC
 
 	 If unsure, say M.
 
+comment "WARNING: The Virtio RTC driver is useless without VIRTIO_RTC_PTP."
+	depends on VIRTIO_RTC && !VIRTIO_RTC_PTP
+
+comment "Enable PTP_1588_CLOCK in order to enable VIRTIO_RTC_PTP."
+	depends on VIRTIO_RTC && PTP_1588_CLOCK=n
+
+config VIRTIO_RTC_PTP
+	bool "Virtio RTC PTP clocks"
+	default y
+	depends on VIRTIO_RTC && PTP_1588_CLOCK
+	help
+	 This exposes any Virtio RTC clocks as PTP Hardware Clocks (PHCs) to
+	 userspace.
+
+	 If unsure, say Y.
+
 endif # VIRTIO_MENU
