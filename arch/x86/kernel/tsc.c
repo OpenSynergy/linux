@@ -54,7 +54,7 @@ static int __read_mostly tsc_force_recalibrate;
 static u32 art_to_tsc_numerator;
 static u32 art_to_tsc_denominator;
 static u64 art_to_tsc_offset;
-static struct clocksource *art_related_clocksource;
+static bool have_art;
 
 struct cyc2ns {
 	struct cyc2ns_data data[2];	/*  0 + 2*16 = 32 */
@@ -1312,8 +1312,10 @@ struct system_counterval_t convert_art_to_tsc(u64 art)
 	do_div(tmp, art_to_tsc_denominator);
 	res += tmp + art_to_tsc_offset;
 
-	return (struct system_counterval_t) {.cs = art_related_clocksource,
-			.cycles = res};
+	return (struct system_counterval_t) {
+		.cs = have_art ? &clocksource_tsc : NULL,
+		.cycles = res
+	};
 }
 EXPORT_SYMBOL(convert_art_to_tsc);
 
@@ -1350,8 +1352,10 @@ struct system_counterval_t convert_art_ns_to_tsc(u64 art_ns)
 	do_div(tmp, USEC_PER_SEC);
 	res += tmp;
 
-	return (struct system_counterval_t) { .cs = art_related_clocksource,
-					      .cycles = res};
+	return (struct system_counterval_t) {
+		.cs = have_art ? &clocksource_tsc : NULL,
+		.cycles = res
+	};
 }
 EXPORT_SYMBOL(convert_art_ns_to_tsc);
 
@@ -1458,7 +1462,7 @@ out:
 		goto unreg;
 
 	if (boot_cpu_has(X86_FEATURE_ART))
-		art_related_clocksource = &clocksource_tsc;
+		have_art = true;
 	clocksource_register_khz(&clocksource_tsc, tsc_khz);
 unreg:
 	clocksource_unregister(&clocksource_tsc_early);
@@ -1484,7 +1488,7 @@ static int __init init_tsc_clocksource(void)
 	 */
 	if (boot_cpu_has(X86_FEATURE_TSC_KNOWN_FREQ)) {
 		if (boot_cpu_has(X86_FEATURE_ART))
-			art_related_clocksource = &clocksource_tsc;
+			have_art = true;
 		clocksource_register_khz(&clocksource_tsc, tsc_khz);
 		clocksource_unregister(&clocksource_tsc_early);
 
