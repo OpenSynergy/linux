@@ -8,6 +8,7 @@ enum clocksource_ids {
 	CSID_ARM_ARCH_COUNTER,
 	CSID_TSC_EARLY,
 	CSID_TSC,
+	CSID_KVM_CLOCK,
 	CSID_MAX,
 };
 
