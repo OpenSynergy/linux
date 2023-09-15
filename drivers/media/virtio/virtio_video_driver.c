@@ -284,8 +284,8 @@ static void virtio_video_remove(struct virtio_device *vdev)
 }
 
 static struct virtio_device_id id_table[] = {
-	{ VIRTIO_ID_VIDEO_DEC, VIRTIO_DEV_ANY_ID },
-	{ VIRTIO_ID_VIDEO_ENC, VIRTIO_DEV_ANY_ID },
+	{ VIRTIO_ID_VIDEO_DECODER, VIRTIO_DEV_ANY_ID },
+	{ VIRTIO_ID_VIDEO_ENCODER, VIRTIO_DEV_ANY_ID },
 	{ 0 },
 };
 

@@ -987,10 +987,10 @@ virtio_video_device_create(struct virtio_video *vv)
 	vvd->num_input_fmts = 0;
 
 	switch (vv->vdev->id.device) {
-	case VIRTIO_ID_VIDEO_ENC:
+	case VIRTIO_ID_VIDEO_ENCODER:
 		vvd->type = VIRTIO_VIDEO_DEVICE_ENCODER;
 		break;
-	case VIRTIO_ID_VIDEO_DEC:
+	case VIRTIO_ID_VIDEO_DECODER:
 	default:
 		vvd->type = VIRTIO_VIDEO_DEVICE_DECODER;
 		break;
