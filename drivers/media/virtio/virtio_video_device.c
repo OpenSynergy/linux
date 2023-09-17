@@ -219,6 +219,7 @@ int virtio_video_querycap(struct file *file, void *fh,
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "virtio:%s",
 		 video_dev->name);
 
+	cap->device_caps = video_dev->device_caps;
 	return 0;
 }
 
@@ -910,7 +911,7 @@ int virtio_video_device_init(struct virtio_video_device *vvd)
 		return -ENOMEM;
 
 	output_resp_buf = kzalloc(vvd->max_caps_len, GFP_KERNEL);
-	if (!input_resp_buf) {
+	if (!output_resp_buf) {
 		ret = -ENOMEM;
 		goto err_output_buf;
 	}
