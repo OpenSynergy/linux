@@ -5,6 +5,7 @@
  * Copyright (C) 2017 Red Hat Inc.
  */
 
+#include <linux/clocksource_ids.h>
 #include <linux/device.h>
 #include <linux/kernel.h>
 #include <asm/pvclock.h>
@@ -93,7 +94,7 @@ int kvm_arch_ptp_get_clock(struct timespec64 *ts)
 }
 
 int kvm_arch_ptp_get_crosststamp(u64 *cycle, struct timespec64 *tspec,
-			      struct clocksource **cs)
+			      struct clocksource **cs, int *cs_id)
 {
 	struct pvclock_vcpu_time_info *src;
 	unsigned int version;
@@ -124,6 +125,7 @@ int kvm_arch_ptp_get_crosststamp(u64 *cycle, struct timespec64 *tspec,
 	} while (pvclock_read_retry(src, version));
 
 	*cs = &kvm_clock;
+	*cs_id = CSID_X86_KVM_CLK;
 
 	return 0;
 }
