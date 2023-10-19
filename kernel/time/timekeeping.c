@@ -1236,7 +1236,8 @@ int get_device_system_crosststamp(int (*get_time_fn)
 		 * system counter value is the same as the currently installed
 		 * timekeeper clocksource
 		 */
-		if (tk->tkr_mono.clock != system_counterval.cs)
+		if (system_counterval.cs_id == CSID_GENERIC ||
+		    tk->tkr_mono.clock->id != system_counterval.cs_id)
 			return -ENODEV;
 		cycles = system_counterval.cycles;
 
