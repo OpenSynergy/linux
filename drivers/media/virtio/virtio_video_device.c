@@ -68,7 +68,7 @@ build_virtio_video_sglist_contig(struct virtio_video_resource_sg_list *sgl,
 	sgl->entries[0].addr = cpu_to_le64(vb2_dma_contig_plane_dma_addr(vb, plane));
 	sgl->entries[0].length = cpu_to_le32(vb->planes[plane].length);
 
-	sgl->num_entries = 1;
+	sgl->num_entries = cpu_to_le32(1);
 
 	return VIRTIO_VIDEO_RESOURCE_SG_SIZE(1);
 }
@@ -91,7 +91,7 @@ build_virtio_video_sglist(struct virtio_video_resource_sg_list *sgl,
 							: sg->length);
 	}
 
-	sgl->num_entries = sgt->nents;
+	sgl->num_entries = cpu_to_le32(sgt->nents);
 
 	return VIRTIO_VIDEO_RESOURCE_SG_SIZE(sgt->nents);
 }
