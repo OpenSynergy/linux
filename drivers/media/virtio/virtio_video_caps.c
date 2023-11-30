@@ -138,7 +138,7 @@ static size_t virtio_video_parse_virtio_fmt(struct virtio_video_device *vvd,
 	return offset;
 }
 
-int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
+static int virtio_video_parse_virtio_capability(struct virtio_video_device *vvd,
 					 void *resp_buf,
 					 struct list_head *ret_fmt_list,
 					 uint32_t *ret_num_fmts)

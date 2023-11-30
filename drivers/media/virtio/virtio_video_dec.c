@@ -78,7 +78,7 @@ static const struct v4l2_ctrl_ops virtio_video_dec_ctrl_ops = {
 	.g_volatile_ctrl	= virtio_video_dec_g_ctrl,
 };
 
-int virtio_video_dec_init_ctrls(struct virtio_video_stream *stream)
+static int virtio_video_dec_init_ctrls(struct virtio_video_stream *stream)
 {
 	struct v4l2_ctrl *ctrl;
 
@@ -109,7 +109,7 @@ int virtio_video_dec_init_ctrls(struct virtio_video_stream *stream)
 	return 0;
 }
 
-int virtio_video_dec_init_queues(void *priv, struct vb2_queue *src_vq,
+static int virtio_video_dec_init_queues(void *priv, struct vb2_queue *src_vq,
 				 struct vb2_queue *dst_vq)
 {
 	int ret;
@@ -270,8 +270,8 @@ static int virtio_video_dec_enum_fmt_vid_cap(struct file *file, void *fh,
 }
 
 
-int virtio_video_dec_enum_fmt_vid_out(struct file *file, void *fh,
-				      struct v4l2_fmtdesc *f)
+static int virtio_video_dec_enum_fmt_vid_out(struct file *file, void *fh,
+					     struct v4l2_fmtdesc *f)
 {
 	struct virtio_video_stream *stream = file2stream(file);
 	struct virtio_video_device *vvd = to_virtio_vd(stream->video_dev);
@@ -315,7 +315,7 @@ static int virtio_video_dec_s_fmt(struct file *file, void *fh,
 	return 0;
 }
 
-int virtio_video_dec_enum_framesizes(struct file *file, void *fh,
+static int virtio_video_dec_enum_framesizes(struct file *file, void *fh,
 				     struct v4l2_frmsizeenum *f)
 {
 	struct virtio_video_stream *stream = file2stream(file);
@@ -333,7 +333,7 @@ int virtio_video_dec_enum_framesizes(struct file *file, void *fh,
 	return virtio_video_frmsizeenum_from_fmt(fmt, f);
 }
 
-int virtio_video_dec_enum_framemintervals(struct file *file, void *fh,
+static int virtio_video_dec_enum_framemintervals(struct file *file, void *fh,
 					  struct v4l2_frmivalenum *f)
 {
 	struct virtio_video_stream *stream = file2stream(file);
@@ -416,7 +416,7 @@ static const struct v4l2_ioctl_ops virtio_video_dec_ioctl_ops = {
 	.vidioc_unsubscribe_event = v4l2_event_unsubscribe,
 };
 
-void *virtio_video_dec_get_fmt_list(struct virtio_video_device *vvd)
+static void *virtio_video_dec_get_fmt_list(struct virtio_video_device *vvd)
 {
 	return &vvd->input_fmt_list;
 }
