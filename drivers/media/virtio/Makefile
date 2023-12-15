@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0+
+# SPDX-License-Identifier: GPL-2.0-or-later
 
 # During development, to turn-off treating warning as error, pass
 # `CFLAGS_MODULE=-Wno-error` to make as an argument or environment variable.
